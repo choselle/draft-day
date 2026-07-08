@@ -19,6 +19,11 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from "react"
 
 const POSITIONS = ["QB", "RB", "WR", "TE", "K", "DST"];
 
+/* Where each rankings source comes from, shown throughout the UI.
+   A CSV can override its own name with a first line like "# source: FantasyPros". */
+const CSV_SOURCE_NAME = "ESPN";
+const WEB_SOURCE_NAME = "FantasyFootballCalculator.com";
+
 const POS_COLOR = {
   QB: "#EF6461",
   RB: "#4EC488",
@@ -74,11 +79,17 @@ function parseImport(text) {
   };
 
   let updatedNote = null;
+  let sourceNote = null;
   const lines = [];
   for (const raw of text.split(/\r?\n/)) {
     const l = raw.trim();
     if (!l) continue;
     if (l.startsWith("#") || l.startsWith("//")) {
+      const s = l.match(/source[:\s-]+(.+)/i);
+      if (s) {
+        sourceNote = s[1].trim();
+        continue;
+      }
       const m = l.match(/updat(?:ed?)?[:\s-]*(.+)/i);
       if (m) updatedNote = m[1].trim();
       continue;
@@ -86,7 +97,7 @@ function parseImport(text) {
     lines.push(l);
   }
   if (!lines.length)
-    return { players: [], errors: ["Nothing to parse."], updatedNote };
+    return { players: [], errors: ["Nothing to parse."], updatedNote, sourceNote };
 
   const delimFor = (line) =>
     line.includes("\t") ? "\t" : line.includes(",") ? "," : null;
@@ -209,7 +220,7 @@ function parseImport(text) {
 
   players.sort((a, b) => a.rank - b.rank);
   players.forEach((p, i) => (p.rank = i + 1));
-  return { players, errors, updatedNote };
+  return { players, errors, updatedNote, sourceNote };
 }
 
 /* ---------- storage (browser localStorage — per device) ---------- */
@@ -382,12 +393,13 @@ export default function DraftDay() {
                   day: "numeric",
                 })
               : null);
+          const sourceName = parsed.sourceNote || CSV_SOURCE_NAME;
           applyNewRankings(
             parsed.players,
             announce
-              ? `Loaded ${parsed.players.length} players from ${fileName}`
+              ? `Loaded ${parsed.players.length} ${sourceName} players from ${fileName}`
               : null,
-            { kind: "csv", label: `My CSV list (${fileName})`, updated }
+            { kind: "csv", label: `${sourceName} (${fileName})`, updated }
           );
           setRankingsSource("csv");
           setSeedStatus("done");
@@ -427,10 +439,10 @@ export default function DraftDay() {
         }));
         applyNewRankings(
           incoming,
-          `Updated: ${incoming.length} players (${data.format} ADP, ${data.year})`,
+          `Updated: ${incoming.length} players from ${WEB_SOURCE_NAME} (${data.format} ADP, ${data.year})`,
           {
             kind: "web",
-            label: `Live ADP (${data.format}, ${data.year} season)`,
+            label: `${WEB_SOURCE_NAME} ADP (${data.format}, ${data.year} season)`,
             updated: new Date().toLocaleString(undefined, {
               month: "short",
               day: "numeric",
@@ -895,8 +907,8 @@ export default function DraftDay() {
                 onClick={() => seedFromFile(true)}
                 disabled={seedStatus === "loading" || webStatus === "loading"}
               >
-                <b>My CSV list</b>
-                <small>players-&lt;scoring&gt;.csv — e.g. your ESPN sheet</small>
+                <b>{CSV_SOURCE_NAME} rankings</b>
+                <small>my sheet — players-&lt;scoring&gt;.csv</small>
               </button>
               <button
                 className={`dd-source ${rankingsSource === "web" ? "on" : ""}`}
@@ -904,7 +916,7 @@ export default function DraftDay() {
                 disabled={seedStatus === "loading" || webStatus === "loading"}
               >
                 <b>Live ADP</b>
-                <small>consensus, fetched on demand</small>
+                <small>{WEB_SOURCE_NAME}</small>
               </button>
             </div>
             <div className="dd-webupdate-row" style={{ marginTop: 10 }}>
@@ -1339,7 +1351,7 @@ export default function DraftDay() {
               updateFromWeb={updateFromWeb}
             />
             <p className="dd-hint" style={{ marginTop: 0 }}>
-              Rankings seed from{" "}
+              {CSV_SOURCE_NAME} rankings seed from{" "}
               <code>public/players-&lt;scoring&gt;.csv</code> (falling back to{" "}
               <code>players.csv</code>); paste or upload below to override any
               time. Headers like <em>rank, name, pos, team, bye, adp</em> are
@@ -1353,7 +1365,7 @@ export default function DraftDay() {
             >
               {seedStatus === "loading"
                 ? "Loading rankings…"
-                : `Reload from players-${scoring}.csv`}
+                : `Reload ${CSV_SOURCE_NAME} list (players-${scoring}.csv)`}
             </button>
             <ImportPanel
               importText={importText}
@@ -1665,7 +1677,7 @@ function WebUpdatePanel({ scoring, changeScoring, webStatus, updateFromWeb }) {
         </button>
       </div>
       <p className="dd-hint" style={{ margin: "8px 0 14px" }}>
-        One tap pulls live consensus ADP through this site — no redeploy
+        One tap pulls live consensus ADP from {WEB_SOURCE_NAME} — no redeploy
         needed. The CSV options below still work as overrides.
       </p>
     </div>
