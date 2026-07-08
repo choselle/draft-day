@@ -9,10 +9,11 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from "react"
      fix or reassign any past pick, or fill any empty board slot
    - Searchable player pool: name, position, team, bye
    - Rankings seed at runtime from public/players-<scoring>.csv
-     (players-ppr.csv, players-half-ppr.csv, players-standard.csv,
-     falling back to players.csv) — overwrite those files and redeploy
-     to update ("drop and go"); in-app paste/upload of any CSV
-     (rank/name/pos/team/bye/ADP) overrides at any time
+     (players-ppr.csv, players-standard.csv; Half PPR uses the PPR
+     sheet since ESPN doesn't publish one; final fallback players.csv)
+     — overwrite those files and redeploy to update ("drop and go");
+     in-app paste/upload of any CSV (rank/name/pos/team/bye/ADP)
+     overrides at any time
    - Value badges when a player falls past their rank or ADP
    - Sticker-wall draft board, roster view, auto-saves progress
    ============================================================ */
@@ -371,7 +372,13 @@ export default function DraftDay() {
     async (announce, fmtOverride) => {
       const format = typeof fmtOverride === "string" ? fmtOverride : scoring;
       setSeedStatus("loading");
-      for (const fileName of [`players-${format}.csv`, "players.csv"]) {
+      /* ESPN publishes PPR and Standard sheets only; their PPR list is
+         near-identical to Half PPR, so Half PPR falls back to the PPR file. */
+      const candidates =
+        format === "half-ppr"
+          ? ["players-half-ppr.csv", "players-ppr.csv", "players.csv"]
+          : [`players-${format}.csv`, "players.csv"];
+      for (const fileName of candidates) {
         try {
           const res = await fetch(`${import.meta.env.BASE_URL}${fileName}`, {
             cache: "no-store",
@@ -1352,8 +1359,9 @@ export default function DraftDay() {
             />
             <p className="dd-hint" style={{ marginTop: 0 }}>
               {CSV_SOURCE_NAME} rankings seed from{" "}
-              <code>public/players-&lt;scoring&gt;.csv</code> (falling back to{" "}
-              <code>players.csv</code>); paste or upload below to override any
+              <code>public/players-&lt;scoring&gt;.csv</code> (Half PPR uses
+              the PPR sheet; fallback <code>players.csv</code>); paste or
+              upload below to override any
               time. Headers like <em>rank, name, pos, team, bye, adp</em> are
               detected in any order. Picks and keepers re-match by player
               name.
