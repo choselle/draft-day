@@ -66,6 +66,22 @@ function pickLabel(overall, numTeams) {
   return `${r}.${String(i).padStart(2, "0")}`;
 }
 
+/* ---------- responsive: wide screens get the split dashboard ---------- */
+const WIDE_QUERY = "(min-width: 1000px)";
+function useIsWide() {
+  const [wide, setWide] = useState(
+    () =>
+      typeof window !== "undefined" && window.matchMedia(WIDE_QUERY).matches
+  );
+  useEffect(() => {
+    const mq = window.matchMedia(WIDE_QUERY);
+    const onChange = (e) => setWide(e.matches);
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
+  return wide;
+}
+
 /* ---------- rankings import parser ----------
    Accepts pasted text or CSV/TSV file contents. Handles:
    - Header rows (rank,name,pos,team,bye,adp — any order)
@@ -781,6 +797,14 @@ export default function DraftDay() {
     setImportText("");
   };
 
+  const isWide = useIsWide();
+  const showSplit = isWide && (tab === "players" || tab === "board");
+
+  /* Major navigation (tab switch, setup <-> draft) lands at the top */
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [tab, phase]);
+
   /* ================= SETUP ================= */
   if (phase === "setup") {
     return (
@@ -908,56 +932,28 @@ export default function DraftDay() {
 
           <section className="dd-card">
             <h2 className="dd-card-title">Rankings source</h2>
-            <div className="dd-source-row">
-              <button
-                className={`dd-source ${rankingsSource === "csv" ? "on" : ""}`}
-                onClick={() => seedFromFile(true)}
-                disabled={seedStatus === "loading" || webStatus === "loading"}
-              >
-                <b>{CSV_SOURCE_NAME} rankings</b>
-                <small>my sheet — players-&lt;scoring&gt;.csv</small>
-              </button>
-              <button
-                className={`dd-source ${rankingsSource === "web" ? "on" : ""}`}
-                onClick={() => updateFromWeb()}
-                disabled={seedStatus === "loading" || webStatus === "loading"}
-              >
-                <b>Live ADP</b>
-                <small>{WEB_SOURCE_NAME}</small>
-              </button>
-            </div>
-            <div className="dd-webupdate-row" style={{ marginTop: 10 }}>
-              <label className="dd-select-wrap">
-                <span>Scoring</span>
-                <select
-                  value={scoring}
-                  onChange={(e) => changeScoring(e.target.value)}
-                >
-                  <option value="ppr">PPR</option>
-                  <option value="half-ppr">Half PPR</option>
-                  <option value="standard">Standard</option>
-                </select>
-              </label>
-            </div>
-            <CurrentListLine
-              meta={rankingsMeta}
-              count={players.length}
-              busy={seedStatus === "loading" || webStatus === "loading"}
-            />
-            {seedStatus === "error" && !players.length && (
-              <p className="dd-hint" style={{ color: "#EF6461" }}>
-                Couldn't load a players CSV from the site — paste or upload
-                your rankings below instead.
-              </p>
-            )}
-            <ImportPanel
-              importText={importText}
-              setImportText={setImportText}
-              importPreview={importPreview}
-              previewImport={previewImport}
-              applyImport={applyImport}
-              fileRef={fileRef}
-              handleFile={handleFile}
+            <RankingsSourcePanel
+              rankingsSource={rankingsSource}
+              rankingsMeta={rankingsMeta}
+              playerCount={players.length}
+              seedStatus={seedStatus}
+              webStatus={webStatus}
+              scoring={scoring}
+              changeScoring={changeScoring}
+              seedFromFile={seedFromFile}
+              updateFromWeb={updateFromWeb}
+              chooseImport={() => setRankingsSource("import")}
+              importPanel={
+                <ImportPanel
+                  importText={importText}
+                  setImportText={setImportText}
+                  importPreview={importPreview}
+                  previewImport={previewImport}
+                  applyImport={applyImport}
+                  fileRef={fileRef}
+                  handleFile={handleFile}
+                />
+              }
             />
           </section>
 
@@ -974,7 +970,7 @@ export default function DraftDay() {
   const editingPick = editOverall != null ? allPicks.get(editOverall) : null;
 
   return (
-    <div className="dd-root">
+    <div className={showSplit ? "dd-root split" : "dd-root"}>
       <style>{CSS}</style>
 
       {/* On-the-clock bar */}
@@ -1030,8 +1026,8 @@ export default function DraftDay() {
         )}
       </header>
 
-      {/* ---- PLAYERS TAB ---- */}
-      {tab === "players" && (
+      {/* ---- PLAYERS TAB (left pane in wide split view) ---- */}
+      {(tab === "players" || showSplit) && (
         <main className="dd-main">
           <div className="dd-search-wrap">
             <input
@@ -1174,8 +1170,8 @@ export default function DraftDay() {
         </main>
       )}
 
-      {/* ---- BOARD TAB ---- */}
-      {tab === "board" && (
+      {/* ---- BOARD TAB (right pane in wide split view) ---- */}
+      {(tab === "board" || showSplit) && (
         <main className="dd-main dd-board-wrap">
           <div className="dd-board-scroll">
             <table className="dd-board">
@@ -1345,44 +1341,29 @@ export default function DraftDay() {
 
           <h2 className="dd-section-title">Rankings</h2>
           <section className="dd-card">
-            <CurrentListLine
-              meta={rankingsMeta}
-              count={players.length}
-              busy={seedStatus === "loading" || webStatus === "loading"}
-              topOfCard
-            />
-            <WebUpdatePanel
+            <RankingsSourcePanel
+              compact
+              rankingsSource={rankingsSource}
+              rankingsMeta={rankingsMeta}
+              playerCount={players.length}
+              seedStatus={seedStatus}
+              webStatus={webStatus}
               scoring={scoring}
               changeScoring={changeScoring}
-              webStatus={webStatus}
+              seedFromFile={seedFromFile}
               updateFromWeb={updateFromWeb}
-            />
-            <p className="dd-hint" style={{ marginTop: 0 }}>
-              {CSV_SOURCE_NAME} rankings seed from{" "}
-              <code>public/players-&lt;scoring&gt;.csv</code> (Half PPR uses
-              the PPR sheet; fallback <code>players.csv</code>); paste or
-              upload below to override any
-              time. Headers like <em>rank, name, pos, team, bye, adp</em> are
-              detected in any order. Picks and keepers re-match by player
-              name.
-            </p>
-            <button
-              className="dd-btn"
-              onClick={() => seedFromFile(true)}
-              disabled={seedStatus === "loading"}
-            >
-              {seedStatus === "loading"
-                ? "Loading rankings…"
-                : `Reload ${CSV_SOURCE_NAME} list (players-${scoring}.csv)`}
-            </button>
-            <ImportPanel
-              importText={importText}
-              setImportText={setImportText}
-              importPreview={importPreview}
-              previewImport={previewImport}
-              applyImport={applyImport}
-              fileRef={fileRef}
-              handleFile={handleFile}
+              chooseImport={() => setRankingsSource("import")}
+              importPanel={
+                <ImportPanel
+                  importText={importText}
+                  setImportText={setImportText}
+                  importPreview={importPreview}
+                  previewImport={previewImport}
+                  applyImport={applyImport}
+                  fileRef={fileRef}
+                  handleFile={handleFile}
+                />
+              }
             />
           </section>
 
@@ -1481,17 +1462,26 @@ export default function DraftDay() {
         </div>
       )}
 
-      {/* Bottom navigation */}
+      {/* Bottom navigation — wide screens show Players+Board as one Draft view */}
       <nav className="dd-nav">
-        {[
-          ["players", "Players"],
-          ["board", "Board"],
-          ["roster", "My Team"],
-          ["more", "More"],
-        ].map(([key, label]) => (
+        {(isWide
+          ? [
+              ["players", "Draft"],
+              ["roster", "My Team"],
+              ["more", "More"],
+            ]
+          : [
+              ["players", "Players"],
+              ["board", "Board"],
+              ["roster", "My Team"],
+              ["more", "More"],
+            ]
+        ).map(([key, label]) => (
           <button
             key={key}
-            className={`dd-nav-btn ${tab === key ? "on" : ""}`}
+            className={`dd-nav-btn ${
+              tab === key || (key === "players" && showSplit) ? "on" : ""
+            }`}
             onClick={() => {
               setTab(key);
               setSelectedId(null);
@@ -1661,34 +1651,122 @@ function CurrentListLine({ meta, count, busy, topOfCard }) {
 }
 
 /* ---------- one-click web update panel (setup + More tab) ---------- */
-function WebUpdatePanel({ scoring, changeScoring, webStatus, updateFromWeb }) {
+/* ---------- rankings source panel (setup + More tab) ----------
+   One place to pick where rankings come from. Import controls only
+   appear when Custom CSV is the chosen source; `compact` drops the
+   explainer text for the in-draft More tab. */
+function RankingsSourcePanel({
+  rankingsSource,
+  rankingsMeta,
+  playerCount,
+  seedStatus,
+  webStatus,
+  scoring,
+  changeScoring,
+  seedFromFile,
+  updateFromWeb,
+  chooseImport,
+  importPanel,
+  compact,
+}) {
+  const busy = seedStatus === "loading" || webStatus === "loading";
   return (
-    <div className="dd-webupdate">
-      <div className="dd-webupdate-row">
-        <label className="dd-select-wrap">
-          <span>Scoring</span>
-          <select
-            value={scoring}
-            onChange={(e) => changeScoring(e.target.value)}
-          >
-            <option value="ppr">PPR</option>
-            <option value="half-ppr">Half PPR</option>
-            <option value="standard">Standard</option>
-          </select>
-        </label>
+    <>
+      <div className="dd-source-row">
         <button
-          className="dd-btn go webupdate"
-          onClick={() => updateFromWeb()}
-          disabled={webStatus === "loading"}
+          className={`dd-source ${rankingsSource === "csv" ? "on" : ""}`}
+          onClick={() => seedFromFile(true)}
+          disabled={busy}
         >
-          {webStatus === "loading" ? "Updating…" : "Update rankings"}
+          <b>{CSV_SOURCE_NAME}</b>
+          <small>my sheet · auto-updated</small>
+        </button>
+        <button
+          className={`dd-source ${rankingsSource === "web" ? "on" : ""}`}
+          onClick={() => updateFromWeb()}
+          disabled={busy}
+        >
+          <b>Live ADP</b>
+          <small>{WEB_SOURCE_NAME} · on demand</small>
+        </button>
+        <button
+          className={`dd-source ${rankingsSource === "import" ? "on" : ""}`}
+          onClick={chooseImport}
+          disabled={busy}
+        >
+          <b>Custom CSV</b>
+          <small>paste or upload · manual</small>
         </button>
       </div>
-      <p className="dd-hint" style={{ margin: "8px 0 14px" }}>
-        One tap pulls live consensus ADP from {WEB_SOURCE_NAME} — no redeploy
-        needed. The CSV options below still work as overrides.
-      </p>
-    </div>
+      <CurrentListLine
+        meta={rankingsMeta}
+        count={playerCount}
+        busy={busy}
+      />
+      {rankingsSource !== "import" && (
+        <div className="dd-webupdate-row" style={{ marginTop: 10 }}>
+          <label className="dd-select-wrap">
+            <span>Scoring</span>
+            <select
+              value={scoring}
+              onChange={(e) => changeScoring(e.target.value)}
+            >
+              <option value="ppr">PPR</option>
+              <option value="half-ppr">Half PPR</option>
+              <option value="standard">Standard</option>
+            </select>
+          </label>
+          {rankingsSource === "web" ? (
+            <button
+              className="dd-btn go webupdate"
+              onClick={() => updateFromWeb()}
+              disabled={busy}
+            >
+              {webStatus === "loading" ? "Updating…" : "Update now"}
+            </button>
+          ) : (
+            <button
+              className="dd-btn webupdate"
+              onClick={() => seedFromFile(true)}
+              disabled={busy}
+            >
+              {seedStatus === "loading" ? "Loading…" : "Reload list"}
+            </button>
+          )}
+        </div>
+      )}
+      {!compact && rankingsSource === "csv" && (
+        <p className="dd-hint">
+          {CSV_SOURCE_NAME} sheets ship with the site and update automatically
+          when new rankings are published — the latest list loads on its own.
+          Half PPR uses the PPR sheet.
+        </p>
+      )}
+      {!compact && rankingsSource === "web" && (
+        <p className="dd-hint">
+          Pulls live consensus ADP from {WEB_SOURCE_NAME} each time you tap
+          Update — no redeploy needed.
+        </p>
+      )}
+      {rankingsSource === "import" && (
+        <>
+          {!compact && (
+            <p className="dd-hint">
+              Your pasted or uploaded file becomes the ranking source. Headers
+              like <em>rank, name, pos, team, bye, adp</em> are detected in
+              any order; picks and keepers re-match by name.
+            </p>
+          )}
+          {importPanel}
+        </>
+      )}
+      {seedStatus === "error" && !playerCount && (
+        <p className="dd-hint" style={{ color: "#EF6461" }}>
+          Couldn't load a players CSV from the site — choose Custom CSV and
+          paste or upload rankings instead.
+        </p>
+      )}
+    </>
   );
 }
 
@@ -1780,6 +1858,8 @@ const CSS = `
   font-size: 16px;
   -webkit-font-smoothing: antialiased;
   padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
   overflow-x: hidden;
 }
 .dd-root *, .dd-root *::before, .dd-root *::after { box-sizing: border-box; }
@@ -1913,7 +1993,7 @@ const CSS = `
 .dd-sheet-head { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
 
 /* ---- rankings source chooser ---- */
-.dd-source-row { display: flex; gap: 8px; }
+.dd-source-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
 .dd-source { flex: 1; min-height: 64px; border-radius: 12px; border: 1px solid var(--line); background: var(--bg); color: var(--text); display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 2px; padding: 10px 12px; text-align: left; }
 .dd-source b { font-size: 15px; font-weight: 800; }
 .dd-source small { font-size: 12px; color: var(--muted); }
@@ -1936,7 +2016,7 @@ const CSS = `
 .dd-preview-line { color: var(--muted); }
 
 /* ---- nav / toast ---- */
-.dd-nav { position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; display: flex; background: var(--panel); border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom, 0px); }
+.dd-nav { position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; display: flex; background: var(--panel); border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom, 0px); padding-left: env(safe-area-inset-left, 0px); padding-right: env(safe-area-inset-right, 0px); }
 .dd-nav-btn { flex: 1; min-height: 56px; background: none; border: none; color: var(--muted); font-weight: 700; font-size: 13px; letter-spacing: 0.06em; text-transform: uppercase; border-top: 2px solid transparent; }
 .dd-nav-btn.on { color: var(--gold); border-top-color: var(--gold); }
 .dd-toast { position: fixed; bottom: calc(70px + env(safe-area-inset-bottom, 0px)); left: 50%; transform: translateX(-50%); z-index: 60; background: var(--text); color: #14181D; font-weight: 700; font-size: 14px; padding: 10px 16px; border-radius: 999px; max-width: 92vw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-shadow: 0 6px 20px rgba(0,0,0,0.4); }
@@ -1949,8 +2029,43 @@ const CSS = `
 }
 @media (min-width: 768px) {
   .dd-root { font-size: 17px; }
-  .dd-main { max-width: 860px; }
+  .dd-main { max-width: 900px; }
   .dd-sheet-backdrop { align-items: center; }
   .dd-sheet { border-radius: 18px; }
+}
+
+/* ---- wide split dashboard: players list + live board side by side ---- */
+@media (min-width: 1000px) {
+  .dd-root.split {
+    height: 100dvh;
+    overflow: hidden;
+    padding-bottom: 0;
+    display: grid;
+    grid-template-columns: minmax(360px, 430px) 1fr;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      "clock clock"
+      "players board"
+      "nav nav";
+  }
+  .dd-root.split .dd-clock { grid-area: clock; }
+  .dd-root.split .dd-main {
+    grid-area: players;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    max-width: none;
+    margin: 0;
+    border-right: 1px solid var(--line);
+  }
+  .dd-root.split .dd-main.dd-board-wrap {
+    grid-area: board;
+    border-right: none;
+    overflow: auto;
+  }
+  .dd-root.split .dd-nav {
+    grid-area: nav;
+    position: static;
+  }
+  .dd-root.split .dd-sticker-name { max-width: 132px; }
 }
 `;
