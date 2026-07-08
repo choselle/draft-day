@@ -1860,7 +1860,9 @@ const CSS = `
   padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px));
   padding-left: env(safe-area-inset-left, 0px);
   padding-right: env(safe-area-inset-right, 0px);
-  overflow-x: hidden;
+  /* clip, not hidden: hidden would make this the scroll container and
+     break position: sticky on the clock bar */
+  overflow-x: clip;
 }
 .dd-root *, .dd-root *::before, .dd-root *::after { box-sizing: border-box; }
 .dd-root button { font: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent; }
@@ -1994,9 +1996,9 @@ const CSS = `
 
 /* ---- rankings source chooser ---- */
 .dd-source-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
-.dd-source { flex: 1; min-height: 64px; border-radius: 12px; border: 1px solid var(--line); background: var(--bg); color: var(--text); display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 2px; padding: 10px 12px; text-align: left; }
+.dd-source { flex: 1; min-width: 0; min-height: 64px; border-radius: 12px; border: 1px solid var(--line); background: var(--bg); color: var(--text); display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 2px; padding: 10px 12px; text-align: left; }
 .dd-source b { font-size: 15px; font-weight: 800; }
-.dd-source small { font-size: 12px; color: var(--muted); }
+.dd-source small { font-size: 12px; color: var(--muted); white-space: normal; overflow-wrap: anywhere; line-height: 1.3; }
 .dd-source.on { border-color: var(--gold); background: rgba(240,194,75,0.08); }
 .dd-source.on b { color: var(--gold); }
 .dd-source:disabled { opacity: 0.6; cursor: default; }
