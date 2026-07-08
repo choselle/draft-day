@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "PowerShell(try { $r = Invoke-WebRequest http://localhost:5173/api/rankings -UseBasicParsing; \"status: $\\($r.StatusCode\\)\"; $r.Content.Substring\\(0, [Math]::Min\\(200, $r.Content.Length\\)\\) } catch { \"failed: $\\($_.Exception.Message\\)\"; $body = $_.Exception.Response; if \\($body\\) { \"status: $\\([int]$body.StatusCode\\)\" } })",
+      "PowerShell(node --version)",
+      "PowerShell(gh auth status)",
+      "PowerShell(node \"C:\\\\Users\\\\chose\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-chose-OneDrive-Workspace-Claude-draft-day\\\\75192869-2f67-4003-b363-1acaf610290e\\\\scratchpad\\\\test-parse.mjs\")",
+      "PowerShell(npm run build)",
+      "PowerShell(winget install --id GitHub.cli --accept-source-agreements --accept-package-agreements)",
+      "PowerShell(git config user.name)",
+      "PowerShell(git config user.email)",
+      "PowerShell(git init -b main)",
+      "PowerShell(git config user.name \"choselle\")",
+      "PowerShell(git add -A)"
+    ]
+  }
+}
