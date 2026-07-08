@@ -8,9 +8,11 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from "react"
    - Tap-to-mark picks, undo, and full out-of-order editing:
      fix or reassign any past pick, or fill any empty board slot
    - Searchable player pool: name, position, team, bye
-   - Rankings seed at runtime from public/players.csv — overwrite that
-     file and redeploy to update ("drop and go"); in-app paste/upload
-     of any CSV (rank/name/pos/team/bye/ADP) overrides at any time
+   - Rankings seed at runtime from public/players-<scoring>.csv
+     (players-ppr.csv, players-half-ppr.csv, players-standard.csv,
+     falling back to players.csv) — overwrite those files and redeploy
+     to update ("drop and go"); in-app paste/upload of any CSV
+     (rank/name/pos/team/bye/ADP) overrides at any time
    - Value badges when a player falls past their rank or ADP
    - Sticker-wall draft board, roster view, auto-saves progress
    ============================================================ */
@@ -351,42 +353,52 @@ export default function DraftDay() {
     [flash]
   );
 
-  /* Fetch the drop-in seed file shipped with the site (public/players.csv) */
+  /* Fetch the drop-in seed file shipped with the site. Tries the file for
+     the selected scoring (public/players-<scoring>.csv) first, then falls
+     back to the generic public/players.csv. */
   const seedFromFile = useCallback(
-    async (announce) => {
+    async (announce, fmtOverride) => {
+      const format = typeof fmtOverride === "string" ? fmtOverride : scoring;
       setSeedStatus("loading");
-      try {
-        const res = await fetch(`${import.meta.env.BASE_URL}players.csv`, {
-          cache: "no-store",
-        });
-        if (!res.ok) throw new Error("players.csv not found");
-        const text = await res.text();
-        const lastMod = res.headers.get("last-modified");
-        const parsed = parseImport(text);
-        if (!parsed.players.length) throw new Error("players.csv was empty");
-        const updated =
-          parsed.updatedNote ||
-          (lastMod
-            ? new Date(lastMod).toLocaleDateString(undefined, {
-                year: "numeric",
-                month: "short",
-                day: "numeric",
-              })
-            : null);
-        applyNewRankings(
-          parsed.players,
-          announce
-            ? `Loaded ${parsed.players.length} players from players.csv`
-            : null,
-          { kind: "csv", label: "My CSV list (players.csv)", updated }
-        );
-        setRankingsSource("csv");
-        setSeedStatus("done");
-      } catch {
-        setSeedStatus("error");
+      for (const fileName of [`players-${format}.csv`, "players.csv"]) {
+        try {
+          const res = await fetch(`${import.meta.env.BASE_URL}${fileName}`, {
+            cache: "no-store",
+          });
+          if (!res.ok) throw new Error(`${fileName} not found`);
+          /* Hosts with SPA fallback answer missing files with index.html */
+          if ((res.headers.get("content-type") || "").includes("text/html"))
+            throw new Error(`${fileName} not found`);
+          const text = await res.text();
+          const lastMod = res.headers.get("last-modified");
+          const parsed = parseImport(text);
+          if (!parsed.players.length) throw new Error(`${fileName} was empty`);
+          const updated =
+            parsed.updatedNote ||
+            (lastMod
+              ? new Date(lastMod).toLocaleDateString(undefined, {
+                  year: "numeric",
+                  month: "short",
+                  day: "numeric",
+                })
+              : null);
+          applyNewRankings(
+            parsed.players,
+            announce
+              ? `Loaded ${parsed.players.length} players from ${fileName}`
+              : null,
+            { kind: "csv", label: `My CSV list (${fileName})`, updated }
+          );
+          setRankingsSource("csv");
+          setSeedStatus("done");
+          return;
+        } catch {
+          /* try the next candidate file */
+        }
       }
+      setSeedStatus("error");
     },
-    [applyNewRankings]
+    [applyNewRankings, scoring]
   );
 
   /* One-click live update via the site's /api/rankings Pages Function
@@ -435,6 +447,17 @@ export default function DraftDay() {
       }
     },
     [scoring, numTeams, applyNewRankings, flash]
+  );
+
+  /* Changing scoring re-loads rankings from the active source so the list
+     always matches the format. A hand-imported list is never clobbered. */
+  const changeScoring = useCallback(
+    (value) => {
+      setScoring(value);
+      if (rankingsSource === "web") updateFromWeb(value);
+      else if (rankingsSource === "csv") seedFromFile(true, value);
+    },
+    [rankingsSource, updateFromWeb, seedFromFile]
   );
 
   /* Seed on first load when there are no saved rankings,
@@ -873,7 +896,7 @@ export default function DraftDay() {
                 disabled={seedStatus === "loading" || webStatus === "loading"}
               >
                 <b>My CSV list</b>
-                <small>players.csv — e.g. your ESPN sheet</small>
+                <small>players-&lt;scoring&gt;.csv — e.g. your ESPN sheet</small>
               </button>
               <button
                 className={`dd-source ${rankingsSource === "web" ? "on" : ""}`}
@@ -884,24 +907,19 @@ export default function DraftDay() {
                 <small>consensus, fetched on demand</small>
               </button>
             </div>
-            {rankingsSource === "web" && (
-              <div className="dd-webupdate-row" style={{ marginTop: 10 }}>
-                <label className="dd-select-wrap">
-                  <span>Scoring</span>
-                  <select
-                    value={scoring}
-                    onChange={(e) => {
-                      setScoring(e.target.value);
-                      updateFromWeb(e.target.value);
-                    }}
-                  >
-                    <option value="half-ppr">Half PPR</option>
-                    <option value="ppr">PPR</option>
-                    <option value="standard">Standard</option>
-                  </select>
-                </label>
-              </div>
-            )}
+            <div className="dd-webupdate-row" style={{ marginTop: 10 }}>
+              <label className="dd-select-wrap">
+                <span>Scoring</span>
+                <select
+                  value={scoring}
+                  onChange={(e) => changeScoring(e.target.value)}
+                >
+                  <option value="half-ppr">Half PPR</option>
+                  <option value="ppr">PPR</option>
+                  <option value="standard">Standard</option>
+                </select>
+              </label>
+            </div>
             <CurrentListLine
               meta={rankingsMeta}
               count={players.length}
@@ -909,8 +927,8 @@ export default function DraftDay() {
             />
             {seedStatus === "error" && !players.length && (
               <p className="dd-hint" style={{ color: "#EF6461" }}>
-                Couldn't load players.csv from the site — paste or upload your
-                rankings below instead.
+                Couldn't load a players CSV from the site — paste or upload
+                your rankings below instead.
               </p>
             )}
             <ImportPanel
@@ -1316,15 +1334,17 @@ export default function DraftDay() {
             />
             <WebUpdatePanel
               scoring={scoring}
-              setScoring={setScoring}
+              changeScoring={changeScoring}
               webStatus={webStatus}
               updateFromWeb={updateFromWeb}
             />
             <p className="dd-hint" style={{ marginTop: 0 }}>
-              Rankings seed from <code>public/players.csv</code>; paste or
-              upload below to override any time. Headers like{" "}
-              <em>rank, name, pos, team, bye, adp</em> are detected in any
-              order. Picks and keepers re-match by player name.
+              Rankings seed from{" "}
+              <code>public/players-&lt;scoring&gt;.csv</code> (falling back to{" "}
+              <code>players.csv</code>); paste or upload below to override any
+              time. Headers like <em>rank, name, pos, team, bye, adp</em> are
+              detected in any order. Picks and keepers re-match by player
+              name.
             </p>
             <button
               className="dd-btn"
@@ -1332,8 +1352,8 @@ export default function DraftDay() {
               disabled={seedStatus === "loading"}
             >
               {seedStatus === "loading"
-                ? "Loading players.csv…"
-                : "Reload from players.csv"}
+                ? "Loading rankings…"
+                : `Reload from players-${scoring}.csv`}
             </button>
             <ImportPanel
               importText={importText}
@@ -1612,8 +1632,8 @@ function CurrentListLine({ meta, count, busy, topOfCard }) {
       {meta && meta.kind === "csv" && !meta.updated && (
         <>
           {" "}
-          — add a first line like <code># updated: 2026-08-30</code> to
-          players.csv so this date shows.
+          — add a first line like <code># updated: 2026-08-30</code> (or a
+          date column) to your players CSV so this date shows.
         </>
       )}
     </p>
@@ -1621,7 +1641,7 @@ function CurrentListLine({ meta, count, busy, topOfCard }) {
 }
 
 /* ---------- one-click web update panel (setup + More tab) ---------- */
-function WebUpdatePanel({ scoring, setScoring, webStatus, updateFromWeb }) {
+function WebUpdatePanel({ scoring, changeScoring, webStatus, updateFromWeb }) {
   return (
     <div className="dd-webupdate">
       <div className="dd-webupdate-row">
@@ -1629,7 +1649,7 @@ function WebUpdatePanel({ scoring, setScoring, webStatus, updateFromWeb }) {
           <span>Scoring</span>
           <select
             value={scoring}
-            onChange={(e) => setScoring(e.target.value)}
+            onChange={(e) => changeScoring(e.target.value)}
           >
             <option value="half-ppr">Half PPR</option>
             <option value="ppr">PPR</option>
