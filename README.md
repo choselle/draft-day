@@ -1,119 +1,99 @@
-# Draft Day — live fantasy football draft tracker
+# Chibz Apps — Draft Day
 
-A mobile-first snake-draft tracker built for iPhone/iPad. Deploys as a pure
-static site — fully compatible with the **Cloudflare Pages free tier** (no
-Functions, KV, or databases required).
+This repo deploys **chibzapps.com** as one Cloudflare Pages site:
 
-## Features
+- `/` — static landing page (`landing/index.html`) linking to the apps
+- `/draftday/` — **Draft Day**, a mobile-first live fantasy football
+  snake-draft tracker (Vite + React, `src/`)
+- `/draftday/api/rankings` — Pages Function
+  (`functions/draftday/api/rankings.js`) proxying live consensus ADP
 
-- Configurable league size, rounds, and your draft slot; snake order handled automatically
+Fully compatible with the **Cloudflare Pages free tier**.
+
+## Draft Day features
+
+- Configurable league size, rounds, and your draft slot; snake order handled automatically (defaults: 10 teams, PPR)
 - Keeper support: pre-assign players to any team + round; those slots are filled and skipped
 - Tap-to-mark picks for every team, undo, and full out-of-order editing (fix any past pick, fill any empty slot)
 - Searchable player pool with rank, position, team, and bye week; position filters and target stars
 - Sticker-wall draft board, roster view with position counts
 - Value badges (+N) when a player falls past their ADP or rank
-- **Drop-in rankings**: the app seeds from `public/players.csv` at load
+- **Drop-in rankings**: the app seeds from per-scoring CSVs in `public/`
 - Draft progress auto-saves to `localStorage` (per device/browser)
 
-## Updating rankings
+## Rankings sources
 
-### Option 1 — One tap in the app (no deploy needed)
+### ESPN CSVs (default, updated by the bot)
 
-The **Update rankings** button (Setup screen and More tab) calls
-`/api/rankings`, a Cloudflare Pages Function deployed with this site
-(`functions/api/rankings.js`). It fetches live consensus ADP from Fantasy
-Football Calculator's free public API server-side (no API key, no CORS
-issues), normalized to the app's format with position, team, bye, and ADP.
-Pick your scoring format (Standard / Half PPR / PPR) next to the button.
+The app seeds from `public/players-<scoring>.csv` for the selected scoring
+format:
 
-Notes:
-- Pages Functions are included in the free tier (100,000 requests/day —
-  effectively unlimited for a personal tool). Responses cache for 30 min.
-- This source is **consensus mock-draft ADP**, not ESPN's editorial cheat
-  sheet. Great for live-draft value; if you specifically want ESPN's exact
-  ranks, use the CSV workflow below.
-- The function only exists on the deployed site. `npm run dev` won't serve
-  it — use `npx wrangler pages dev` to test functions locally.
+| Scoring  | File tried first          | Fallbacks                        |
+| -------- | ------------------------- | -------------------------------- |
+| PPR      | `players-ppr.csv`         | `players.csv`                    |
+| Half PPR | `players-half-ppr.csv`    | `players-ppr.csv`, `players.csv` |
+| Standard | `players-standard.csv`    | `players.csv`                    |
 
-### Option 2 — Drop-in CSV ("drop and go")
+(ESPN only publishes PPR and Standard sheets and calls PPR near-identical
+to Half PPR, hence the Half PPR fallback.)
 
-**Tracking your list's date:** put a comment as the first line of
-`players.csv`, e.g. `# updated: 2026-08-30`. The app shows this on the
-Setup screen and More tab as "Last updated" for your CSV list (falling back
-to the file's Last-Modified header when the comment is missing). This
-matters most for a manually converted ESPN sheet, where staleness is easy
-to lose track of. The setup screen also has a **Rankings source** chooser —
-tap "My CSV list" or "Live ADP" to switch; the app remembers your choice
-and shows what's currently loaded and when it was last updated.
+A separate bot process (`lars-draft-bot`) watches ESPN's sheet and opens a
+PR updating these files whenever it changes; merging the PR redeploys the
+site. The ESPN header format
+(`overall_rank,position,position_rank,name,team,auction_value,bye_week,source_last_update_date`)
+parses as-is, and generic headers (`rank,name,pos,team,bye,adp` in any
+order), TSV, headerless, and loose lines all work too.
 
-1. Get the latest rankings as CSV (export from a rankings site, or convert a
-   PDF cheat sheet — any converter or spreadsheet works).
-2. Overwrite `public/players.csv` with the new file.
-3. Redeploy (git push, or re-upload — see below). Done.
+Optional comment lines at the top of a CSV:
 
-The CSV is flexible. A header row is recommended; columns can be in any order:
+- `# updated: 2026-08-30` — shown as the list's "Last updated" (a date
+  column also works; falls back to the HTTP Last-Modified header)
+- `# source: FantasyPros` — overrides the "ESPN" source label in the UI
 
-```csv
-rank,name,pos,team,bye,adp
-1,Ja'Marr Chase,WR,CIN,10,1.2
-2,Bijan Robinson,RB,ATL,5,2.0
-```
+### Live ADP (one tap, no deploy)
 
-- `rank`, `name` — required (rank falls back to line order if missing)
-- `pos` — QB / RB / WR / TE / K / DST (D/ST, DEF, PK are normalized)
-- `team`, `bye` — optional but recommended
-- `adp` — optional; powers the value badges (rank is used as fallback)
-- Tab-separated and headerless data also parse; loose lines like
-  `12. Nico Collins WR HOU` work too
+The **Update rankings** button calls `/draftday/api/rankings`, which
+fetches live consensus ADP from FantasyFootballCalculator.com's free public
+API server-side (no API key, no CORS issues). Pick Standard / Half PPR /
+PPR next to the button. Responses cache for 30 minutes; Pages Functions
+free tier allows 100,000 requests/day. This is consensus mock-draft ADP,
+not ESPN's editorial sheet — great for live value, different list.
 
-Load order on the device: saved draft state in localStorage wins (so a
-redeploy mid-draft never clobbers your board), then `players.csv`. Use
-**More → Reload from players.csv** to pull the newly deployed file on demand,
-or the paste/upload panel to override without any deploy at all. Existing
-picks, keepers, and targets are re-matched by player name when rankings
-change.
+### Paste/upload
+
+The import panel accepts pasted text or a CSV/TSV file at any time and
+overrides everything; a hand-imported list is never silently replaced by a
+scoring switch. Existing picks, keepers, and targets re-match by player
+name whenever rankings change.
 
 ## Local development
 
 ```bash
 npm install
-npm run dev      # http://localhost:5173
-npm run build    # outputs static site to dist/
+npm run dev      # landing: http://localhost:5173  ·  app: http://localhost:5173/draftday/
+npm run build    # static site in dist/ (landing at root, app in dist/draftday/)
 ```
 
-## Deploying to Cloudflare Pages (free tier)
+The Vite dev server also runs the rankings Pages Function locally (see
+`pagesDevShim` in `vite.config.js`), so Live ADP works in dev.
 
-### Option A — Git integration (recommended)
+## Deployment
 
-1. Push this folder to a GitHub/GitLab repo.
-2. Cloudflare dashboard → **Workers & Pages → Create → Pages → Connect to Git**.
-3. Framework preset: **Vite** (or set manually):
-   - Build command: `npm run build`
-   - Build output directory: `dist`
-4. Deploy. Every future `git push` (including just a new `players.csv`)
-   triggers a rebuild automatically. Free tier includes 500 builds/month —
-   plenty.
+Cloudflare Pages, Git integration: production branch `main`, build command
+`npm run build`, output directory `dist`. The `functions/` directory is
+picked up automatically. Every merge to `main` (including bot ranking PRs)
+triggers a deploy; PRs get preview URLs.
 
-### Option B — Direct upload (no git)
-
-```bash
-npm install
-npm run build
-npx wrangler pages deploy dist
-```
-
-Or build locally and drag the `dist/` folder into
-**Workers & Pages → Create → Pages → Upload assets** in the dashboard.
-Note: direct upload deploys the *built* `dist` folder, so run
-`npm run build` after changing `players.csv`.
+`main` is branch-protected: changes go through PRs with one approval
+(repo owner exempt).
 
 ## Data & limitations
 
 - Draft state lives in `localStorage`: per device, per browser. Clearing
   Safari website data (or using Private Browsing) removes/blocks it.
 - The one-tap update relies on a third-party public API; if it ever changes
-  shape or goes away, the CSV workflow keeps working unchanged. You can
-  sanity-check the upstream directly in a browser:
-  `https://fantasyfootballcalculator.com/api/v1/adp/half-ppr?teams=12&year=2026`
-- After the first load, everything runs client-side; only `players.csv`
-  requires a network request, and only when seeding or reloading.
+  shape or goes away, the CSV workflow keeps working unchanged. Sanity-check
+  the upstream directly:
+  `https://fantasyfootballcalculator.com/api/v1/adp/ppr?teams=10&year=2026`
+- After the first load, everything runs client-side; only the seed CSVs
+  require a network request, and only when seeding or reloading.
