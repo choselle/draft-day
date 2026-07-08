@@ -252,7 +252,7 @@ function clearState() {
 export default function DraftDay() {
   const saved = useMemo(loadState, []);
   const [phase, setPhase] = useState((saved && saved.phase) || "setup"); // setup | draft
-  const [numTeams, setNumTeams] = useState((saved && saved.numTeams) || 12);
+  const [numTeams, setNumTeams] = useState((saved && saved.numTeams) || 10);
   const [numRounds, setNumRounds] = useState((saved && saved.numRounds) || 16);
   const [mySlot, setMySlot] = useState((saved && saved.mySlot) || 1); // 1-based
   const [teamNames, setTeamNames] = useState((saved && saved.teamNames) || []);
@@ -265,7 +265,7 @@ export default function DraftDay() {
   ); // manual picks: {overall, seq, teamIdx, playerId, name, pos, team}
   const [keepers, setKeepers] = useState((saved && saved.keepers) || []); // {playerId, name, pos, team, teamIdx, round}
   const [targets, setTargets] = useState((saved && saved.targets) || []); // player ids
-  const [scoring, setScoring] = useState((saved && saved.scoring) || "half-ppr");
+  const [scoring, setScoring] = useState((saved && saved.scoring) || "ppr");
   const [rankingsSource, setRankingsSource] = useState(
     (saved && saved.rankingsSource) || "csv"
   ); // csv | web | import
@@ -732,7 +732,7 @@ export default function DraftDay() {
     setTargets([]);
     setPlayers([]);
     setTeamNames([]);
-    setNumTeams(12);
+    setNumTeams(10);
     setNumRounds(16);
     setMySlot(1);
     setSearch("");
@@ -933,8 +933,8 @@ export default function DraftDay() {
                   value={scoring}
                   onChange={(e) => changeScoring(e.target.value)}
                 >
-                  <option value="half-ppr">Half PPR</option>
                   <option value="ppr">PPR</option>
+                  <option value="half-ppr">Half PPR</option>
                   <option value="standard">Standard</option>
                 </select>
               </label>
@@ -1671,8 +1671,8 @@ function WebUpdatePanel({ scoring, changeScoring, webStatus, updateFromWeb }) {
             value={scoring}
             onChange={(e) => changeScoring(e.target.value)}
           >
-            <option value="half-ppr">Half PPR</option>
             <option value="ppr">PPR</option>
+            <option value="half-ppr">Half PPR</option>
             <option value="standard">Standard</option>
           </select>
         </label>
