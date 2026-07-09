@@ -137,6 +137,7 @@ function parseImport(text) {
         team: "team", tm: "team", nfl: "team",
         bye: "bye", bye_week: "bye",
         adp: "adp",
+        tier: "tier",
       };
       cells.forEach((c, idx) => {
         const key = EXACT[c];
@@ -156,6 +157,7 @@ function parseImport(text) {
         else if (c.includes("pos")) assign("pos");
         else if (c.includes("bye")) assign("bye");
         else if (c.includes("team")) assign("team");
+        else if (c.includes("tier")) assign("tier");
         else if (c.includes("rank")) assign("rank");
         else if (c.includes("updat") || c.includes("date")) assign("updated");
       });
@@ -173,7 +175,8 @@ function parseImport(text) {
       pos = null,
       team = null,
       bye = "",
-      adp = null;
+      adp = null,
+      tier = null;
 
     if (colMap && colMap.name != null) {
       const cells = line.split(delimFor(line) || ",").map((c) => c.trim());
@@ -189,6 +192,10 @@ function parseImport(text) {
       if (colMap.adp != null) {
         const a = parseFloat(String(cells[colMap.adp]).replace(/[^\d.]/g, ""));
         if (Number.isFinite(a)) adp = Math.round(a);
+      }
+      if (colMap.tier != null) {
+        const t = parseInt(String(cells[colMap.tier]).replace(/\D/g, ""), 10);
+        if (Number.isFinite(t)) tier = t;
       }
     } else {
       // Heuristic parse
@@ -232,6 +239,7 @@ function parseImport(text) {
       team: team || "",
       bye,
       adp,
+      tier,
     });
   }
 
@@ -702,6 +710,85 @@ export default function DraftDay() {
       return diff >= 3 ? diff : null;
     },
     [activeSlot]
+  );
+
+  /* ---------- tiers ----------
+     Explicit `tier` CSV column wins; otherwise derive per-position tiers
+     from gaps in ADP (or rank): a jump of >= max(3, 12%) starts a new tier. */
+  const tierOf = useMemo(() => {
+    const m = new Map();
+    if (players.some((p) => p.tier != null)) {
+      players.forEach((p) => {
+        if (p.tier != null) m.set(p.id, p.tier);
+      });
+      return m;
+    }
+    for (const pos of POSITIONS) {
+      const group = players
+        .filter((p) => p.pos === pos)
+        .sort((a, b) => a.rank - b.rank);
+      let tier = 0;
+      let prev = null;
+      for (const p of group) {
+        const basis = p.adp != null ? p.adp : p.rank;
+        if (prev == null || basis - prev >= Math.max(3, prev * 0.12)) tier++;
+        m.set(p.id, tier);
+        prev = basis;
+      }
+    }
+    return m;
+  }, [players]);
+
+  /* Players who are the last available member of their positional tier */
+  const lastOfTier = useMemo(() => {
+    const counts = new Map();
+    players.forEach((p) => {
+      if (draftedIds.has(p.id)) return;
+      const t = tierOf.get(p.id);
+      if (t == null) return;
+      const key = `${p.pos}|${t}`;
+      counts.set(key, (counts.get(key) || 0) + 1);
+    });
+    const s = new Set();
+    players.forEach((p) => {
+      if (draftedIds.has(p.id)) return;
+      const t = tierOf.get(p.id);
+      if (t != null && counts.get(`${p.pos}|${t}`) === 1) s.add(p.id);
+    });
+    return s;
+  }, [players, draftedIds, tierOf]);
+
+  /* ---------- my roster's bye-week load ---------- */
+  const myByeCounts = useMemo(() => {
+    const byId = new Map(players.map((p) => [p.id, p]));
+    const counts = new Map(); // bye week -> { total, pos: {POS: n} }
+    allPicks.forEach((pk) => {
+      if (pk.teamIdx !== myIdx) return;
+      const pl = byId.get(pk.playerId);
+      const bye = pl && pl.bye;
+      if (!bye || bye === "0") return;
+      let e = counts.get(bye);
+      if (!e) counts.set(bye, (e = { total: 0, pos: {} }));
+      e.total++;
+      e.pos[pk.pos] = (e.pos[pk.pos] || 0) + 1;
+    });
+    return counts;
+  }, [players, allPicks, myIdx]);
+
+  /* Warning text if drafting this player would crowd a bye week */
+  const byeWarningFor = useCallback(
+    (p) => {
+      if (!p || !p.bye || p.bye === "0") return null;
+      const e = myByeCounts.get(p.bye);
+      if (!e) return null;
+      const samePos = e.pos[p.pos] || 0;
+      if (["QB", "TE", "K", "DST"].includes(p.pos) && samePos >= 1)
+        return `Your other ${p.pos} also has bye ${p.bye}`;
+      if (e.total >= 2)
+        return `You'd have ${e.total + 1} players on bye ${p.bye}`;
+      return null;
+    },
+    [myByeCounts]
   );
 
   /* ---------- actions ---------- */
@@ -1217,14 +1304,26 @@ export default function DraftDay() {
           </div>
 
           <ul className="dd-list">
-            {filteredPlayers.map((p) => {
+            {filteredPlayers.map((p, idx) => {
               const pickInfo = draftedIds.get(p.id);
               const isSel = selectedId === p.id;
               const val = !pickInfo ? valueFor(p) : null;
               const injTag = injuryTag(metaFor(p));
+              const tier = tierOf.get(p.id);
+              const showTierBreak =
+                POSITIONS.includes(posFilter) &&
+                tier != null &&
+                tier !== (idx > 0 ? tierOf.get(filteredPlayers[idx - 1].id) : null);
+              const byeWarn =
+                isSel && !pickInfo && activeSlotTeam === myIdx
+                  ? byeWarningFor(p)
+                  : null;
               return (
+                <React.Fragment key={p.id}>
+                {showTierBreak && (
+                  <li className="dd-tierhead">Tier {tier}</li>
+                )}
                 <li
-                  key={p.id}
                   className={`dd-row ${pickInfo ? "picked" : ""} ${
                     isSel ? "sel" : ""
                   }`}
@@ -1265,6 +1364,14 @@ export default function DraftDay() {
                         {injTag}
                       </span>
                     )}
+                    {!pickInfo && lastOfTier.has(p.id) && (
+                      <span
+                        className="dd-tierlast"
+                        title={`Last available ${p.pos} in tier ${tier}`}
+                      >
+                        Last T{tier}
+                      </span>
+                    )}
                     {val != null && (
                       <span className="dd-val" title="Fallen past ADP/rank">
                         +{val}
@@ -1288,6 +1395,9 @@ export default function DraftDay() {
                   )}
                   {isSel && !pickInfo && activeSlot != null && (
                     <div className="dd-confirm">
+                      {byeWarn && (
+                        <p className="dd-byewarn">⚠ {byeWarn}</p>
+                      )}
                       <button
                         className={`dd-draftbtn ${
                           activeSlotTeam === myIdx ? "mine" : ""
@@ -1324,6 +1434,7 @@ export default function DraftDay() {
                     </div>
                   )}
                 </li>
+                </React.Fragment>
               );
             })}
             {!filteredPlayers.length && (
@@ -1443,6 +1554,22 @@ export default function DraftDay() {
                     </span>
                   ))}
                 </div>
+                {myByeCounts.size > 0 && (
+                  <div className="dd-byes-row">
+                    {[...myByeCounts.entries()]
+                      .sort((a, b) => Number(a[0]) - Number(b[0]))
+                      .map(([wk, e]) => (
+                        <span
+                          key={wk}
+                          className={`dd-bye-chip ${
+                            e.total >= 3 ? "warn3" : e.total === 2 ? "warn2" : ""
+                          }`}
+                        >
+                          Bye {wk} · {e.total}
+                        </span>
+                      ))}
+                  </div>
+                )}
                 {mine.length ? (
                   <ul className="dd-list roster">
                     {mine.map((p) => {
@@ -2367,6 +2494,16 @@ const CSS = `
 .dd-btn.warn { border-color: #6B5A22; color: var(--gold); }
 .dd-btn.danger { border-color: #6B2E2E; color: #EF6461; }
 .dd-btn:disabled { opacity: 0.4; cursor: default; }
+
+/* ---- tiers / bye warnings ---- */
+.dd-tierhead { list-style: none; padding: 10px 14px 4px; font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--gold); font-weight: 800; }
+.dd-tierlast { flex: 0 0 auto; margin-left: 6px; padding: 2px 7px; border-radius: 999px; border: 1px solid #B58CE6; color: #B58CE6; background: rgba(181,140,230,0.12); font-size: 11px; font-weight: 800; white-space: nowrap; }
+.dd-confirm { flex-wrap: wrap; }
+.dd-byewarn { flex-basis: 100%; margin: 0 0 8px; padding: 8px 10px; border-radius: 8px; background: rgba(242,164,74,0.1); border: 1px solid #6B5A22; color: #F2A44A; font-size: 13px; }
+.dd-byes-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+.dd-bye-chip { border: 1px solid var(--line); border-radius: 999px; padding: 6px 12px; font-size: 14px; color: var(--muted); }
+.dd-bye-chip.warn2 { border-color: #6B5A22; color: #F2A44A; }
+.dd-bye-chip.warn3 { border-color: #6B2E2E; color: #EF6461; }
 
 /* ---- injury badge / player details ---- */
 .dd-inj { flex: 0 0 auto; margin-left: 6px; padding: 2px 7px; border-radius: 999px; border: 1px solid #EF6461; color: #EF6461; background: rgba(239,100,97,0.12); font-size: 11px; font-weight: 800; letter-spacing: 0.04em; }
