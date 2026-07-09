@@ -739,21 +739,27 @@ export default function DraftDay() {
     return m;
   }, [players]);
 
-  /* Players who are the last available member of their positional tier */
+  /* Players who are the last available member of their positional tier.
+     Only tiers that started with 3+ players badge — a group genuinely
+     running out — so tiny elite tiers (Gibbs/Bijan, a one-man QB tier)
+     don't cry wolf at the top of the draft. */
   const lastOfTier = useMemo(() => {
-    const counts = new Map();
+    const totals = new Map();
+    const avail = new Map();
     players.forEach((p) => {
-      if (draftedIds.has(p.id)) return;
       const t = tierOf.get(p.id);
       if (t == null) return;
       const key = `${p.pos}|${t}`;
-      counts.set(key, (counts.get(key) || 0) + 1);
+      totals.set(key, (totals.get(key) || 0) + 1);
+      if (!draftedIds.has(p.id)) avail.set(key, (avail.get(key) || 0) + 1);
     });
     const s = new Set();
     players.forEach((p) => {
       if (draftedIds.has(p.id)) return;
       const t = tierOf.get(p.id);
-      if (t != null && counts.get(`${p.pos}|${t}`) === 1) s.add(p.id);
+      if (t == null) return;
+      const key = `${p.pos}|${t}`;
+      if (avail.get(key) === 1 && totals.get(key) >= 3) s.add(p.id);
     });
     return s;
   }, [players, draftedIds, tierOf]);
