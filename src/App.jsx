@@ -1216,12 +1216,13 @@ export default function DraftDay() {
                           : r * numTeams + (numTeams - c);
                       const pk = allPicks.get(overall);
                       const isCurrent = overall === currentPick;
+                      const isAssign = overall === assignSlot;
                       return (
                         <td
                           key={c}
                           className={`dd-cell ${isCurrent ? "current" : ""} ${
-                            c === myIdx ? "mecol" : ""
-                          }`}
+                            isAssign ? "assign" : ""
+                          } ${c === myIdx ? "mecol" : ""}`}
                         >
                           {pk ? (
                             <button
@@ -1994,6 +1995,7 @@ const CSS = `
 .dd-cell { border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); padding: 3px; height: 52px; vertical-align: middle; }
 .dd-cell.mecol { background: rgba(240,194,75,0.06); }
 .dd-cell.current { box-shadow: inset 0 0 0 2px var(--gold); }
+.dd-cell.assign { box-shadow: inset 0 0 0 2px var(--text); background: rgba(242,244,246,0.08); }
 .dd-cell-empty { display: block; width: 100%; height: 100%; min-height: 44px; background: none; border: none; color: #3A434E; font-size: 11px; font-variant-numeric: tabular-nums; }
 .dd-sticker { display: block; width: 100%; border: none; text-align: left; border-radius: 6px; padding: 5px 6px; color: #10141A; }
 .dd-sticker-name { display: block; font-size: 12px; font-weight: 800; line-height: 1.15; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 110px; }
@@ -2045,6 +2047,11 @@ const CSS = `
 .dd-toast { position: fixed; bottom: calc(70px + env(safe-area-inset-bottom, 0px)); left: 50%; transform: translateX(-50%); z-index: 60; background: var(--text); color: #14181D; font-weight: 700; font-size: 14px; padding: 10px 16px; border-radius: 999px; max-width: 92vw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-shadow: 0 6px 20px rgba(0,0,0,0.4); }
 
 @media (prefers-reduced-motion: no-preference) {
+  .dd-cell.assign { animation: dd-assign-pulse 1.2s ease-in-out infinite; }
+  @keyframes dd-assign-pulse {
+    0%, 100% { box-shadow: inset 0 0 0 2px rgba(242,244,246,1); }
+    50% { box-shadow: inset 0 0 0 2px rgba(242,244,246,0.35); }
+  }
   .dd-toast { animation: dd-pop 0.18s ease-out; }
   @keyframes dd-pop { from { opacity: 0; transform: translateX(-50%) translateY(6px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
   .dd-sheet { animation: dd-rise 0.2s ease-out; }
