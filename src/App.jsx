@@ -263,6 +263,95 @@ function clearState() {
   } catch {}
 }
 
+/* ---------- live player meta (Sleeper, free/no key, CORS-open) ----------
+   Injuries, roster status, depth charts, and bio for the detail sheet.
+   The full dump is ~14MB raw so it's slimmed to ~200KB and cached in
+   localStorage for a day (Sleeper asks for ~once-daily calls). */
+const META_KEY = "draftday-playermeta-v1";
+const META_TTL = 24 * 60 * 60 * 1000;
+const META_POS = new Set(["QB", "RB", "WR", "TE", "K", "DEF"]);
+
+function loadPlayerMeta() {
+  try {
+    const v = localStorage.getItem(META_KEY);
+    return v ? JSON.parse(v) : null;
+  } catch {
+    return null;
+  }
+}
+
+async function fetchPlayerMeta() {
+  const res = await fetch("https://api.sleeper.app/v1/players/nfl");
+  if (!res.ok) throw new Error(`Sleeper returned ${res.status}`);
+  const all = await res.json();
+  const players = {};
+  for (const id in all) {
+    const p = all[id];
+    if (!p || !p.team) continue;
+    const fps = p.fantasy_positions || [];
+    if (!fps.some((f) => META_POS.has(f))) continue;
+    const rec = {
+      inj: p.injury_status || null,
+      part: p.injury_body_part || null,
+      note: p.injury_notes || null,
+      practice: p.practice_participation || null,
+      status: p.status || null,
+      news: p.news_updated || null,
+      age: p.age || null,
+      exp: p.years_exp != null ? p.years_exp : null,
+      ht: p.height || null,
+      wt: p.weight || null,
+      college: p.college || null,
+      num: p.number || null,
+      depthPos: p.depth_chart_position || null,
+      depthOrd: p.depth_chart_order || null,
+      team: p.team,
+    };
+    if (p.position === "DEF") {
+      players[`dst-${String(p.team).toLowerCase()}`] = rec;
+    } else {
+      /* Index under both Sleeper's normalized key and ours (which also
+         strips Jr/III suffixes) so either side's naming matches. */
+      if (p.search_full_name) players[p.search_full_name] = rec;
+      const ours = normName(p.full_name || "");
+      if (ours && !players[ours]) players[ours] = rec;
+    }
+  }
+  const data = { fetched: Date.now(), players };
+  try {
+    localStorage.setItem(META_KEY, JSON.stringify(data));
+  } catch {}
+  return data;
+}
+
+/* Badge text for a player's injury/roster situation, or null if healthy */
+const INJ_LABEL = {
+  Questionable: "Q",
+  Doubtful: "D",
+  Out: "O",
+  IR: "IR",
+  PUP: "PUP",
+  Sus: "SUS",
+  COV: "C",
+  NA: "NA",
+  DNR: "DNR",
+};
+function injuryTag(meta) {
+  if (!meta) return null;
+  if (meta.inj) return INJ_LABEL[meta.inj] || meta.inj.slice(0, 3).toUpperCase();
+  const s = meta.status;
+  if (s && /injured reserve/i.test(s)) return "IR";
+  if (s && /suspend/i.test(s)) return "SUS";
+  if (s && /physically unable/i.test(s)) return "PUP";
+  return null;
+}
+
+function fmtHeight(ht) {
+  const n = parseInt(ht, 10);
+  if (!Number.isFinite(n) || n < 48) return ht || null;
+  return `${Math.floor(n / 12)}'${n % 12}"`;
+}
+
 /* ============================================================ */
 
 export default function DraftDay() {
@@ -817,6 +906,48 @@ export default function DraftDay() {
     window.scrollTo(0, 0);
   }, [tab, phase]);
 
+  /* ---------- live player meta (injuries / depth charts) ---------- */
+  const [metaData, setMetaData] = useState(() => loadPlayerMeta());
+  const [metaStatus, setMetaStatus] = useState("idle"); // idle | loading | done | error
+  const [detailId, setDetailId] = useState(null);
+  const playerMeta = metaData ? metaData.players : null;
+
+  const refreshPlayerMeta = useCallback(async () => {
+    setMetaStatus("loading");
+    try {
+      setMetaData(await fetchPlayerMeta());
+      setMetaStatus("done");
+    } catch {
+      setMetaStatus("error");
+    }
+  }, []);
+
+  /* Refresh in the background when the cache is missing or a day old.
+     Failures are silent — the app fully works without this data. */
+  const didMetaInit = useRef(false);
+  useEffect(() => {
+    if (didMetaInit.current) return;
+    didMetaInit.current = true;
+    const fresh = metaData && Date.now() - metaData.fetched < META_TTL;
+    if (!fresh) refreshPlayerMeta();
+  }, [metaData, refreshPlayerMeta]);
+
+  const metaFor = useCallback(
+    (p) => {
+      if (!playerMeta || !p) return null;
+      if (p.pos === "DST") {
+        /* Team codes differ between sources (ESPN JAC = Sleeper JAX) */
+        const alias = { jac: "jax", la: "lar", wsh: "was", sd: "lac" };
+        const t = String(p.team).toLowerCase();
+        return (
+          playerMeta[`dst-${t}`] || playerMeta[`dst-${alias[t] || t}`] || null
+        );
+      }
+      return playerMeta[normName(p.name)] || null;
+    },
+    [playerMeta]
+  );
+
   /* ================= SETUP ================= */
   if (phase === "setup") {
     return (
@@ -1090,6 +1221,7 @@ export default function DraftDay() {
               const pickInfo = draftedIds.get(p.id);
               const isSel = selectedId === p.id;
               const val = !pickInfo ? valueFor(p) : null;
+              const injTag = injuryTag(metaFor(p));
               return (
                 <li
                   key={p.id}
@@ -1125,6 +1257,14 @@ export default function DraftDay() {
                           : ""}
                       </span>
                     </span>
+                    {injTag && (
+                      <span
+                        className={`dd-inj ${injTag === "Q" ? "q" : ""}`}
+                        title="Injury / roster status"
+                      >
+                        {injTag}
+                      </span>
+                    )}
                     {val != null && (
                       <span className="dd-val" title="Fallen past ADP/rank">
                         +{val}
@@ -1168,6 +1308,12 @@ export default function DraftDay() {
                               currentPick,
                               numTeams
                             )}`}
+                      </button>
+                      <button
+                        className="dd-cancel"
+                        onClick={() => setDetailId(p.id)}
+                      >
+                        Details
                       </button>
                       <button
                         className="dd-cancel"
@@ -1301,6 +1447,7 @@ export default function DraftDay() {
                   <ul className="dd-list roster">
                     {mine.map((p) => {
                       const full = players.find((x) => x.id === p.playerId);
+                      const injTag = injuryTag(metaFor(full || p));
                       return (
                         <li key={p.overall} className="dd-row">
                           <button
@@ -1327,6 +1474,15 @@ export default function DraftDay() {
                                 {p.keeper ? " · Keeper" : ""}
                               </span>
                             </span>
+                            {injTag && (
+                              <span
+                                className={`dd-inj ${
+                                  injTag === "Q" ? "q" : ""
+                                }`}
+                              >
+                                {injTag}
+                              </span>
+                            )}
                           </button>
                         </li>
                       );
@@ -1386,6 +1542,37 @@ export default function DraftDay() {
                 />
               }
             />
+          </section>
+
+          <h2 className="dd-section-title">Player data</h2>
+          <section className="dd-card">
+            <p className="dd-hint" style={{ margin: 0 }}>
+              Live injuries, roster status, and depth charts from Sleeper —
+              shown as badges on player rows and in player details.{" "}
+              {metaData
+                ? `Synced ${new Date(metaData.fetched).toLocaleString(
+                    undefined,
+                    {
+                      month: "short",
+                      day: "numeric",
+                      hour: "numeric",
+                      minute: "2-digit",
+                    }
+                  )}.`
+                : "Not synced yet."}
+              {metaStatus === "error" ? " Last sync failed." : ""}
+            </p>
+            <button
+              className="dd-btn"
+              style={{ marginTop: 10 }}
+              onClick={refreshPlayerMeta}
+              disabled={metaStatus === "loading"}
+            >
+              {metaStatus === "loading" ? "Syncing…" : "Refresh player data"}
+            </button>
+            <p className="dd-hint">
+              Auto-refreshes once a day (~3 MB download).
+            </p>
           </section>
 
           <h2 className="dd-section-title">Draft controls</h2>
@@ -1475,6 +1662,16 @@ export default function DraftDay() {
             <button
               className="dd-btn"
               style={{ marginTop: 10 }}
+              onClick={() => {
+                setDetailId(editingPick.playerId);
+                setEditOverall(null);
+              }}
+            >
+              Player details
+            </button>
+            <button
+              className="dd-btn"
+              style={{ marginTop: 10 }}
               onClick={() => setEditOverall(null)}
             >
               Cancel
@@ -1482,6 +1679,26 @@ export default function DraftDay() {
           </div>
         </div>
       )}
+
+      {/* ---- PLAYER DETAIL SHEET ---- */}
+      {detailId != null &&
+        (() => {
+          const dp = players.find((x) => x.id === detailId);
+          if (!dp) return null;
+          return (
+            <PlayerDetailSheet
+              player={dp}
+              meta={metaFor(dp)}
+              pickInfo={draftedIds.get(dp.id)}
+              value={valueFor(dp)}
+              isTarget={targets.includes(dp.id)}
+              toggleTarget={toggleTarget}
+              nameFor={nameFor}
+              numTeams={numTeams}
+              onClose={() => setDetailId(null)}
+            />
+          );
+        })()}
 
       {/* Bottom navigation — wide screens show Players+Board as one Draft view */}
       <nav className="dd-nav">
@@ -1635,6 +1852,145 @@ function KeeperManager({
           ))}
         </ul>
       )}
+    </div>
+  );
+}
+
+/* ---------- player detail sheet ---------- */
+function PlayerDetailSheet({
+  player,
+  meta,
+  pickInfo,
+  value,
+  isTarget,
+  toggleTarget,
+  nameFor,
+  numTeams,
+  onClose,
+}) {
+  const tag = injuryTag(meta);
+  const injLine =
+    meta && (meta.inj || tag)
+      ? [meta.inj || tag, meta.part].filter(Boolean).join(" — ")
+      : null;
+  const rosterLine =
+    meta && meta.status && meta.status !== "Active" ? meta.status : null;
+  return (
+    <div className="dd-sheet-backdrop" onClick={onClose}>
+      <div className="dd-sheet" onClick={(e) => e.stopPropagation()}>
+        <div className="dd-sheet-head">
+          <span
+            className="dd-pos"
+            style={{ background: POS_COLOR[player.pos] || "#666" }}
+          >
+            {player.pos}
+          </span>
+          <div className="dd-nameblock">
+            <span className="dd-pname">{player.name}</span>
+            <span className="dd-pmeta">
+              {player.team || "—"}
+              {meta && meta.num ? ` · #${meta.num}` : ""}
+              {player.bye ? ` · Bye ${player.bye}` : ""}
+            </span>
+          </div>
+          {!pickInfo && (
+            <button
+              className={`dd-star ${isTarget ? "on" : ""}`}
+              onClick={() => toggleTarget(player.id)}
+              aria-label={isTarget ? "Remove target" : "Target player"}
+            >
+              ★
+            </button>
+          )}
+        </div>
+
+        {(injLine || rosterLine) && (
+          <div className={`dd-detail-inj ${tag === "Q" ? "q" : ""}`}>
+            <b>{injLine || rosterLine}</b>
+            {injLine && rosterLine ? ` · ${rosterLine}` : ""}
+            {meta.practice ? ` · Practice: ${meta.practice}` : ""}
+            {meta.note ? <div className="dd-detail-note">{meta.note}</div> : null}
+          </div>
+        )}
+
+        <div className="dd-detail-grid">
+          <div className="dd-detail-row">
+            <span>Rank</span>
+            <b>{player.rank}</b>
+          </div>
+          <div className="dd-detail-row">
+            <span>ADP</span>
+            <b>{player.adp != null ? player.adp : "—"}</b>
+          </div>
+          <div className="dd-detail-row">
+            <span>Status</span>
+            <b>
+              {pickInfo
+                ? `${pickLabel(pickInfo.overall, numTeams)} · ${nameFor(
+                    pickInfo.teamIdx
+                  )}`
+                : value != null
+                ? `Available · value +${value}`
+                : "Available"}
+            </b>
+          </div>
+          {meta && meta.depthPos && (
+            <div className="dd-detail-row">
+              <span>Depth chart</span>
+              <b>
+                {meta.depthPos}
+                {meta.depthOrd || ""} · {meta.team}
+              </b>
+            </div>
+          )}
+          {meta && meta.age && (
+            <div className="dd-detail-row">
+              <span>Age / Exp</span>
+              <b>
+                {meta.age}
+                {meta.exp != null
+                  ? ` · ${meta.exp === 0 ? "Rookie" : `${meta.exp} yr`}`
+                  : ""}
+              </b>
+            </div>
+          )}
+          {meta && (meta.ht || meta.wt) && (
+            <div className="dd-detail-row">
+              <span>Size</span>
+              <b>
+                {[fmtHeight(meta.ht), meta.wt ? `${meta.wt} lb` : null]
+                  .filter(Boolean)
+                  .join(" · ")}
+              </b>
+            </div>
+          )}
+          {meta && meta.college && (
+            <div className="dd-detail-row">
+              <span>College</span>
+              <b>{meta.college}</b>
+            </div>
+          )}
+        </div>
+
+        {!meta && (
+          <p className="dd-hint" style={{ margin: "0 0 12px" }}>
+            No live player data matched — bio and injury info unavailable.
+          </p>
+        )}
+        {meta && meta.news && (
+          <p className="dd-hint" style={{ margin: "0 0 12px" }}>
+            News updated{" "}
+            {new Date(meta.news).toLocaleDateString(undefined, {
+              month: "short",
+              day: "numeric",
+            })}{" "}
+            · Sleeper
+          </p>
+        )}
+        <button className="dd-btn" onClick={onClose}>
+          Close
+        </button>
+      </div>
     </div>
   );
 }
@@ -2011,6 +2367,18 @@ const CSS = `
 .dd-btn.warn { border-color: #6B5A22; color: var(--gold); }
 .dd-btn.danger { border-color: #6B2E2E; color: #EF6461; }
 .dd-btn:disabled { opacity: 0.4; cursor: default; }
+
+/* ---- injury badge / player details ---- */
+.dd-inj { flex: 0 0 auto; margin-left: 6px; padding: 2px 7px; border-radius: 999px; border: 1px solid #EF6461; color: #EF6461; background: rgba(239,100,97,0.12); font-size: 11px; font-weight: 800; letter-spacing: 0.04em; }
+.dd-inj.q { border-color: #F2A44A; color: #F2A44A; background: rgba(242,164,74,0.12); }
+.dd-detail-inj { margin: 0 0 12px; padding: 10px 12px; border: 1px solid #6B2E2E; border-radius: 10px; background: rgba(239,100,97,0.08); font-size: 14px; line-height: 1.45; }
+.dd-detail-inj.q { border-color: #6B5A22; background: rgba(242,164,74,0.08); }
+.dd-detail-note { margin-top: 6px; color: var(--muted); font-size: 13px; }
+.dd-detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; margin: 0 0 12px; }
+.dd-detail-row { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.dd-detail-row span { font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); font-weight: 700; }
+.dd-detail-row b { font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dd-sheet .dd-star { position: static; width: 44px; height: 44px; flex: 0 0 auto; }
 
 /* ---- edit sheet ---- */
 .dd-sheet-backdrop { position: fixed; inset: 0; z-index: 50; background: rgba(0,0,0,0.55); display: flex; align-items: flex-end; justify-content: center; }
