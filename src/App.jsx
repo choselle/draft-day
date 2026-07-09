@@ -800,6 +800,18 @@ export default function DraftDay() {
   const isWide = useIsWide();
   const showSplit = isWide && (tab === "players" || tab === "board");
 
+  /* Clock bar height feeds the sticky offset of the list toolbar */
+  const clockRef = useRef(null);
+  const [clockH, setClockH] = useState(64);
+  useEffect(() => {
+    const el = clockRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setClockH(el.offsetHeight));
+    ro.observe(el);
+    setClockH(el.offsetHeight);
+    return () => ro.disconnect();
+  }, [phase]);
+
   /* Major navigation (tab switch, setup <-> draft) lands at the top */
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -970,11 +982,17 @@ export default function DraftDay() {
   const editingPick = editOverall != null ? allPicks.get(editOverall) : null;
 
   return (
-    <div className={showSplit ? "dd-root split" : "dd-root"}>
+    <div
+      className={showSplit ? "dd-root split" : "dd-root"}
+      style={{ "--clock-h": `${clockH}px` }}
+    >
       <style>{CSS}</style>
 
       {/* On-the-clock bar */}
-      <header className={`dd-clock ${iAmOnClock && assignSlot == null ? "mine" : ""}`}>
+      <header
+        ref={clockRef}
+        className={`dd-clock ${iAmOnClock && assignSlot == null ? "mine" : ""}`}
+      >
         {draftDone && assignSlot == null ? (
           <div className="dd-clock-main">
             <span className="dd-clock-kick">DRAFT COMPLETE</span>
@@ -1029,16 +1047,17 @@ export default function DraftDay() {
       {/* ---- PLAYERS TAB (left pane in wide split view) ---- */}
       {(tab === "players" || showSplit) && (
         <main className="dd-main">
-          <div className="dd-search-wrap">
-            <input
-              className="dd-search"
-              type="search"
-              placeholder="Search name or team…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-          </div>
-          <div className="dd-chips">
+          <div className="dd-listtools">
+            <div className="dd-search-wrap">
+              <input
+                className="dd-search"
+                type="search"
+                placeholder="Search name or team…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+            </div>
+            <div className="dd-chips">
             {["ALL", ...POSITIONS, "★"].map((p) => (
               <button
                 key={p}
@@ -1063,6 +1082,7 @@ export default function DraftDay() {
             >
               {showDrafted ? "Hiding: none" : "Show picked"}
             </button>
+            </div>
           </div>
 
           <ul className="dd-list">
@@ -1934,6 +1954,7 @@ const CSS = `
 /* ---- player list ---- */
 .dd-main { max-width: 720px; margin: 0 auto; width: 100%; min-width: 0; }
 .dd-pad { padding: 16px; }
+.dd-listtools { position: sticky; top: var(--clock-h, 64px); z-index: 10; background: var(--bg); }
 .dd-search-wrap { padding: 12px 14px 4px; }
 .dd-search { width: 100%; min-height: 48px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; color: var(--text); padding: 0 14px; font-size: 16px; }
 .dd-search::placeholder { color: var(--muted); }
@@ -2068,6 +2089,8 @@ const CSS = `
     grid-area: nav;
     position: static;
   }
+  /* Inside the split pane the clock is outside the scroller */
+  .dd-root.split .dd-listtools { top: 0; }
   .dd-root.split .dd-sticker-name { max-width: 132px; }
 }
 `;
