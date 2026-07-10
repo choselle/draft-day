@@ -817,6 +817,14 @@ export default function DraftDay() {
     });
     setSelectedId(null);
     setAssignSlot(null);
+    /* A confirmed pick ends the current search: restore the full list
+       so the next pick starts fresh. (Cancel keeps the search, so
+       comparing similar names still works.) */
+    if (search) {
+      setSearch("");
+      if (playersMainRef.current) playersMainRef.current.scrollTo({ top: 0 });
+      window.scrollTo(0, 0);
+    }
     flash(
       `${player.name} → ${nameFor(teamIdx)} at ${pickLabel(overall, numTeams)}`
     );
@@ -981,6 +989,10 @@ export default function DraftDay() {
 
   const isWide = useIsWide();
   const showSplit = isWide && (tab === "players" || tab === "board");
+
+  /* Scrolls back to the top of the player list after a searched pick
+     (the pane scrolls in the wide split view, the window otherwise) */
+  const playersMainRef = useRef(null);
 
   /* Clock bar height feeds the sticky offset of the list toolbar */
   const clockRef = useRef(null);
@@ -1270,7 +1282,7 @@ export default function DraftDay() {
 
       {/* ---- PLAYERS TAB (left pane in wide split view) ---- */}
       {(tab === "players" || showSplit) && (
-        <main className="dd-main">
+        <main className="dd-main" ref={playersMainRef}>
           <div className="dd-listtools">
             <div className="dd-search-wrap">
               <input
@@ -2382,7 +2394,7 @@ const CSS = `
 .dd-loading { padding: 48px 20px; text-align: center; color: var(--muted); letter-spacing: 0.08em; text-transform: uppercase; font-size: 13px; }
 
 /* ---- setup ---- */
-.dd-setup { max-width: 560px; margin: 0 auto; padding: 24px 16px 40px; }
+.dd-setup { max-width: 560px; margin: 0 auto; padding: calc(24px + env(safe-area-inset-top, 0px)) 16px 40px; }
 .dd-brand { margin-bottom: 20px; }
 .dd-brand-kick { font-size: 11px; letter-spacing: 0.22em; color: var(--gold); font-weight: 700; }
 .dd-brand h1 { margin: 4px 0 6px; font-size: 34px; font-weight: 800; letter-spacing: -0.01em; text-transform: uppercase; }
