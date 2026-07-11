@@ -1,24 +1,22 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
-import { readFileSync } from "node:fs";
 
-/* Site layout: a static landing page (landing/) at "/" and the Draft Day
-   app under "/draftday/". In production, Cloudflare Pages serves the repo's
-   functions/draftday/api/rankings.js at /draftday/api/rankings and the
-   landing page is copied to the dist root by scripts/copy-landing.mjs.
-   Vite's dev server knows about neither, so both are wired up here. */
+/* Draft Day deploys as its own Cloudflare Pages project served at the
+   domain root (draftday.chibzapps.com). The landing page (landing/) is
+   a separate Pages project on chibzapps.com built via
+   `npm run build:landing`. In production Cloudflare serves
+   functions/api/rankings.js at /api/rankings; Vite's dev server knows
+   nothing about Pages Functions, so the same function is wired up here. */
 function pagesDevShim() {
   return {
     name: "pages-dev-shim",
     configureServer(server) {
-      server.middlewares.use("/draftday/api/rankings", async (req, res) => {
+      server.middlewares.use("/api/rankings", async (req, res) => {
         try {
-          const { onRequestGet } = await import(
-            "./functions/draftday/api/rankings.js"
-          );
+          const { onRequestGet } = await import("./functions/api/rankings.js");
           const url = new URL(req.url, "http://localhost");
           const request = new Request(
-            `http://localhost/draftday/api/rankings${url.search}`
+            `http://localhost/api/rankings${url.search}`
           );
           const response = await onRequestGet({ request });
           res.statusCode = response.status;
@@ -30,21 +28,10 @@ function pagesDevShim() {
           res.end(JSON.stringify({ error: String(err && err.message) }));
         }
       });
-      server.middlewares.use((req, res, next) => {
-        const path = req.url.split("?")[0];
-        if (path === "/" || path === "/index.html") {
-          res.setHeader("content-type", "text/html; charset=utf-8");
-          res.end(readFileSync("landing/index.html"));
-          return;
-        }
-        next();
-      });
     },
   };
 }
 
 export default defineConfig({
-  base: "/draftday/",
   plugins: [react(), pagesDevShim()],
-  build: { outDir: "dist/draftday" },
 });

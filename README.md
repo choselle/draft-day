@@ -1,12 +1,14 @@
 # Chibz Apps — Draft Day
 
-This repo deploys **chibzapps.com** as one Cloudflare Pages site:
+This repo feeds **two Cloudflare Pages projects**:
 
-- `/` — static landing page (`landing/index.html`) linking to the apps
-- `/draftday/` — **Draft Day**, a mobile-first live fantasy football
-  snake-draft tracker (Vite + React, `src/`)
-- `/draftday/api/rankings` — Pages Function
-  (`functions/draftday/api/rankings.js`) proxying live consensus ADP
+- **draftday.chibzapps.com** — **Draft Day**, a mobile-first live fantasy
+  football snake-draft tracker (Vite + React, `src/`), built with
+  `npm run build` → `dist/`. `functions/api/rankings.js` serves
+  `/api/rankings` (live consensus ADP proxy).
+- **chibzapps.com** — static landing page (`landing/`), built with
+  `npm run build:landing` → `dist-landing/`. Its `_redirects` sends the
+  old `/draftday/*` paths to the subdomain.
 
 Fully compatible with the **Cloudflare Pages free tier**.
 
@@ -52,7 +54,7 @@ Optional comment lines at the top of a CSV:
 
 ### Live ADP (one tap, no deploy)
 
-The **Update rankings** button calls `/draftday/api/rankings`, which
+The **Update rankings** button calls `/api/rankings`, which
 fetches live consensus ADP from FantasyFootballCalculator.com's free public
 API server-side (no API key, no CORS issues). Pick Standard / Half PPR /
 PPR next to the button. Responses cache for 30 minutes; Pages Functions
@@ -70,8 +72,9 @@ name whenever rankings change.
 
 ```bash
 npm install
-npm run dev      # landing: http://localhost:5173  ·  app: http://localhost:5173/draftday/
-npm run build    # static site in dist/ (landing at root, app in dist/draftday/)
+npm run dev            # app: http://localhost:5173
+npm run build          # app -> dist/
+npm run build:landing  # landing page -> dist-landing/
 ```
 
 The Vite dev server also runs the rankings Pages Function locally (see
@@ -79,10 +82,16 @@ The Vite dev server also runs the rankings Pages Function locally (see
 
 ## Deployment
 
-Cloudflare Pages, Git integration: production branch `main`, build command
-`npm run build`, output directory `dist`. The `functions/` directory is
-picked up automatically. Every merge to `main` (including bot ranking PRs)
-triggers a deploy; PRs get preview URLs.
+Two Cloudflare Pages projects, both on Git integration against `main`:
+
+| Project | Domain | Build command | Output |
+| --- | --- | --- | --- |
+| draft-day (app) | draftday.chibzapps.com | `npm run build` | `dist` |
+| landing | chibzapps.com | `npm run build:landing` | `dist-landing` |
+
+The `functions/` directory deploys with both projects (harmless on the
+landing project). Every merge to `main` (including bot ranking PRs)
+triggers deploys; PRs get preview URLs.
 
 `main` is branch-protected: changes go through PRs with one approval
 (repo owner exempt).

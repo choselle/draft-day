@@ -1,6 +1,6 @@
 /* Draft Day service worker — offline resilience for bad draft-party wifi.
  *
- * Scope: /draftday/ only (the landing page stays plain).
+ * The app is its own Pages project at the subdomain root.
  * - Navigations: network-first; offline serves the cached app shell.
  * - Hashed build assets (/assets/): immutable, cache-first.
  * - /api/rankings: network-first, falling back to the last good response.
@@ -10,8 +10,8 @@
  *
  * Bump VERSION to drop all cached entries on the next visit.
  */
-const VERSION = "draftday-sw-v1";
-const BASE = "/draftday/";
+const VERSION = "draftday-sw-v2";
+const BASE = "/";
 
 async function putInCache(request, response) {
   try {

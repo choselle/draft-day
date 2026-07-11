@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build && node scripts/copy-landing.mjs",
+    "build": "vite build",
+    "build:landing": "node scripts/copy-landing.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

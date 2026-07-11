@@ -1,0 +1,3 @@
+# Draft Day moved from chibzapps.com/draftday to its own subdomain
+/draftday https://draftday.chibzapps.com/ 301
+/draftday/* https://draftday.chibzapps.com/:splat 301

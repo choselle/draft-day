@@ -1,4 +1,4 @@
-/* Cloudflare Pages Function: GET /draftday/api/rankings?format=half-ppr&teams=12
+/* Cloudflare Pages Function: GET /api/rankings?format=half-ppr&teams=12
  *
  * Proxies Fantasy Football Calculator's public ADP API (free, no API key)
  * and normalizes it to the app's player shape. Runs server-side on
