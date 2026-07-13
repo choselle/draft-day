@@ -1370,6 +1370,25 @@ export default function DraftDay() {
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
+              <select
+                className="dd-source-quick"
+                value={rankingsSource}
+                aria-label="Ranking source"
+                title="Ranking source"
+                disabled={seedStatus === "loading" || webStatus === "loading"}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (v === "csv") seedFromFile(true);
+                  else if (v === "web") updateFromWeb();
+                  else restoreImport();
+                }}
+              >
+                <option value="csv">{CSV_SOURCE_NAME}</option>
+                <option value="web">Live ADP</option>
+                {(rankingsSource === "import" || storedImport) && (
+                  <option value="import">Imported</option>
+                )}
+              </select>
             </div>
             <div className="dd-chips">
             {["ALL", ...POSITIONS, "★"].map((p) => (
@@ -1396,24 +1415,6 @@ export default function DraftDay() {
             >
               {showDrafted ? "Hiding: none" : "Show picked"}
             </button>
-            <select
-              className="dd-chip dd-source-quick"
-              value={rankingsSource}
-              aria-label="Ranking source"
-              disabled={seedStatus === "loading" || webStatus === "loading"}
-              onChange={(e) => {
-                const v = e.target.value;
-                if (v === "csv") seedFromFile(true);
-                else if (v === "web") updateFromWeb();
-                else restoreImport();
-              }}
-            >
-              <option value="csv">{CSV_SOURCE_NAME}</option>
-              <option value="web">Live ADP</option>
-              {(rankingsSource === "import" || storedImport) && (
-                <option value="import">Imported</option>
-              )}
-            </select>
             </div>
           </div>
 
@@ -2567,8 +2568,8 @@ const CSS = `
 .dd-main { max-width: 720px; margin: 0 auto; width: 100%; min-width: 0; }
 .dd-pad { padding: 16px; }
 .dd-listtools { position: sticky; top: var(--clock-h, 64px); z-index: 10; background: var(--bg); }
-.dd-search-wrap { padding: 12px 14px 4px; }
-.dd-search { width: 100%; min-height: 48px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; color: var(--text); padding: 0 14px; font-size: 16px; }
+.dd-search-wrap { display: flex; gap: 8px; padding: 12px 14px 4px; }
+.dd-search { flex: 1; min-width: 0; min-height: 48px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; color: var(--text); padding: 0 14px; font-size: 16px; }
 .dd-search::placeholder { color: var(--muted); }
 .dd-chips { display: flex; gap: 6px; overflow-x: auto; padding: 10px 14px; -webkit-overflow-scrolling: touch; }
 .dd-chips::-webkit-scrollbar { display: none; }
@@ -2576,7 +2577,7 @@ const CSS = `
 .dd-chip.on { background: var(--text); border-color: var(--text); color: #14181D; }
 .dd-chip.ghost { color: var(--muted); }
 .dd-chip.on-ghost { border-color: var(--gold); color: var(--gold); }
-select.dd-source-quick { appearance: none; -webkit-appearance: none; color: var(--gold); padding-right: 28px; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23F0C24B' stroke-width='1.6' fill='none' stroke-linecap='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 12px center; }
+select.dd-source-quick { appearance: none; -webkit-appearance: none; flex: 0 0 auto; max-width: 44%; min-height: 48px; border: 1px solid var(--line); border-radius: 12px; background-color: var(--panel); color: var(--gold); font-weight: 700; font-size: 14px; padding: 0 30px 0 12px; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23F0C24B' stroke-width='1.6' fill='none' stroke-linecap='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 12px center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 select.dd-source-quick:disabled { opacity: 0.5; }
 .dd-list { list-style: none; margin: 0; padding: 0 0 16px; }
 .dd-list.roster { margin-top: 12px; }
