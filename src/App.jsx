@@ -248,6 +248,37 @@ function parseImport(text) {
   return { players, errors, updatedNote, sourceNote };
 }
 
+/* ---------- cross-source player matching ----------
+   Sources spell players differently (suffixes, punctuation) and name
+   team defenses differently ("Broncos D/ST" vs "Denver Broncos"), so
+   picks re-link across sources by normalized name + position, with a
+   name-only fallback that refuses ambiguous matches. DSTs match by
+   team code. */
+const TEAM_ALIAS = { jac: "jax", la: "lar", wsh: "was", sd: "lac" };
+function dstKey(team) {
+  const t = String(team || "").toLowerCase();
+  return `dst|${TEAM_ALIAS[t] || t}`;
+}
+function buildMatchMaps(players) {
+  const byKey = new Map(); // "name|pos" and "dst|team"
+  const byName = new Map(); // normName -> player, or null when ambiguous
+  for (const p of players) {
+    if (p.pos === "DST") {
+      byKey.set(dstKey(p.team), p);
+      continue;
+    }
+    const n = normName(p.name);
+    byKey.set(`${n}|${p.pos}`, p);
+    byName.set(n, byName.has(n) ? null : p);
+  }
+  return { byKey, byName };
+}
+function matchPlayer(maps, name, pos, team) {
+  if (pos === "DST") return maps.byKey.get(dstKey(team)) || null;
+  const n = normName(name);
+  return maps.byKey.get(`${n}|${pos}`) || maps.byName.get(n) || null;
+}
+
 /* ---------- storage (browser localStorage — per device) ---------- */
 const STORAGE_KEY = "draftday-state-v1";
 function loadState() {
@@ -269,6 +300,23 @@ function clearState() {
   try {
     localStorage.removeItem(STORAGE_KEY);
   } catch {}
+}
+
+/* Last pasted/uploaded list, kept so "Imported" stays a source you can
+   switch back to mid-draft after trying ESPN or Live ADP. */
+const IMPORT_KEY = "draftday-import-v1";
+function saveStoredImport(data) {
+  try {
+    localStorage.setItem(IMPORT_KEY, JSON.stringify(data));
+  } catch {}
+}
+function loadStoredImport() {
+  try {
+    const v = localStorage.getItem(IMPORT_KEY);
+    return v ? JSON.parse(v) : null;
+  } catch {
+    return null;
+  }
 }
 
 /* ---------- live player meta (Sleeper, free/no key, CORS-open) ----------
@@ -448,16 +496,16 @@ export default function DraftDay() {
      by normalized player name so a mid-draft update never loses the board. */
   const applyNewRankings = useCallback(
     (incoming, announceMsg, meta) => {
-      const byName = new Map(incoming.map((p) => [normName(p.name), p]));
+      const maps = buildMatchMaps(incoming);
       setPicks((prev) =>
         prev.map((pk) => {
-          const match = byName.get(normName(pk.name));
+          const match = matchPlayer(maps, pk.name, pk.pos, pk.team);
           return match ? { ...pk, playerId: match.id } : pk;
         })
       );
       setKeepers((prev) =>
         prev.map((k) => {
-          const match = byName.get(normName(k.name));
+          const match = matchPlayer(maps, k.name, k.pos, k.team);
           return match ? { ...k, playerId: match.id } : k;
         })
       );
@@ -466,7 +514,9 @@ export default function DraftDay() {
         return prev
           .map((id) => {
             const old = oldById.get(id);
-            const match = old ? byName.get(normName(old.name)) : null;
+            const match = old
+              ? matchPlayer(maps, old.name, old.pos, old.team)
+              : null;
             return match ? match.id : null;
           })
           .filter(Boolean);
@@ -529,8 +579,12 @@ export default function DraftDay() {
         }
       }
       setSeedStatus("error");
+      if (announce)
+        flash(
+          `Couldn't load the ${CSV_SOURCE_NAME} CSVs — previous list kept.`
+        );
     },
-    [applyNewRankings, scoring]
+    [applyNewRankings, scoring, flash]
   );
 
   /* One-click live update via the site's /api/rankings Pages Function
@@ -968,24 +1022,45 @@ export default function DraftDay() {
   const applyImport = () => {
     if (!importPreview || !importPreview.players.length) return;
     const incoming = importPreview.players;
+    const label = importFileName.current
+      ? `Uploaded file (${importFileName.current})`
+      : "Pasted list";
+    const updated =
+      importPreview.updatedNote ||
+      new Date().toLocaleDateString(undefined, {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+      });
     applyNewRankings(incoming, `Imported ${incoming.length} players.`, {
       kind: "import",
-      label: importFileName.current
-        ? `Uploaded file (${importFileName.current})`
-        : "Pasted list",
-      updated:
-        importPreview.updatedNote ||
-        new Date().toLocaleDateString(undefined, {
-          year: "numeric",
-          month: "short",
-          day: "numeric",
-        }),
+      label,
+      updated,
     });
     setRankingsSource("import");
+    saveStoredImport({ players: incoming, label, updated });
     importFileName.current = null;
     setImportPreview(null);
     setImportText("");
   };
+
+  const storedImport = useMemo(loadStoredImport, [rankingsMeta]);
+
+  /* Bring back the last pasted/uploaded list after trying another source */
+  const restoreImport = useCallback(() => {
+    const st = loadStoredImport();
+    if (!st || !st.players || !st.players.length) {
+      setRankingsSource("import");
+      flash("No imported list saved yet — paste or upload one first.");
+      return;
+    }
+    applyNewRankings(
+      st.players,
+      `Restored ${st.players.length} players (${st.label}).`,
+      { kind: "import", label: st.label, updated: st.updated }
+    );
+    setRankingsSource("import");
+  }, [applyNewRankings, flash]);
 
   const isWide = useIsWide();
   const showSplit = isWide && (tab === "players" || tab === "board");
@@ -1042,10 +1117,11 @@ export default function DraftDay() {
       if (!playerMeta || !p) return null;
       if (p.pos === "DST") {
         /* Team codes differ between sources (ESPN JAC = Sleeper JAX) */
-        const alias = { jac: "jax", la: "lar", wsh: "was", sd: "lac" };
         const t = String(p.team).toLowerCase();
         return (
-          playerMeta[`dst-${t}`] || playerMeta[`dst-${alias[t] || t}`] || null
+          playerMeta[`dst-${t}`] ||
+          playerMeta[`dst-${TEAM_ALIAS[t] || t}`] ||
+          null
         );
       }
       return playerMeta[normName(p.name)] || null;
@@ -1191,6 +1267,8 @@ export default function DraftDay() {
               seedFromFile={seedFromFile}
               updateFromWeb={updateFromWeb}
               chooseImport={() => setRankingsSource("import")}
+              storedImport={storedImport}
+              restoreImport={restoreImport}
               importPanel={
                 <ImportPanel
                   importText={importText}
@@ -1318,6 +1396,24 @@ export default function DraftDay() {
             >
               {showDrafted ? "Hiding: none" : "Show picked"}
             </button>
+            <select
+              className="dd-chip dd-source-quick"
+              value={rankingsSource}
+              aria-label="Ranking source"
+              disabled={seedStatus === "loading" || webStatus === "loading"}
+              onChange={(e) => {
+                const v = e.target.value;
+                if (v === "csv") seedFromFile(true);
+                else if (v === "web") updateFromWeb();
+                else restoreImport();
+              }}
+            >
+              <option value="csv">{CSV_SOURCE_NAME}</option>
+              <option value="web">Live ADP</option>
+              {(rankingsSource === "import" || storedImport) && (
+                <option value="import">Imported</option>
+              )}
+            </select>
             </div>
           </div>
 
@@ -1675,6 +1771,8 @@ export default function DraftDay() {
               seedFromFile={seedFromFile}
               updateFromWeb={updateFromWeb}
               chooseImport={() => setRankingsSource("import")}
+              storedImport={storedImport}
+              restoreImport={restoreImport}
               importPanel={
                 <ImportPanel
                   importText={importText}
@@ -2190,6 +2288,8 @@ function RankingsSourcePanel({
   chooseImport,
   importPanel,
   compact,
+  storedImport,
+  restoreImport,
 }) {
   const busy = seedStatus === "loading" || webStatus === "loading";
   return (
@@ -2278,6 +2378,16 @@ function RankingsSourcePanel({
               like <em>rank, name, pos, team, bye, adp</em> are detected in
               any order; picks and keepers re-match by name.
             </p>
+          )}
+          {storedImport && storedImport.players && (
+            <button
+              className="dd-btn"
+              style={{ marginTop: 10 }}
+              onClick={restoreImport}
+            >
+              Use last imported list ({storedImport.players.length} players —{" "}
+              {storedImport.label})
+            </button>
           )}
           {importPanel}
         </>
@@ -2466,6 +2576,8 @@ const CSS = `
 .dd-chip.on { background: var(--text); border-color: var(--text); color: #14181D; }
 .dd-chip.ghost { color: var(--muted); }
 .dd-chip.on-ghost { border-color: var(--gold); color: var(--gold); }
+select.dd-source-quick { appearance: none; -webkit-appearance: none; color: var(--gold); padding-right: 28px; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23F0C24B' stroke-width='1.6' fill='none' stroke-linecap='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 12px center; }
+select.dd-source-quick:disabled { opacity: 0.5; }
 .dd-list { list-style: none; margin: 0; padding: 0 0 16px; }
 .dd-list.roster { margin-top: 12px; }
 .dd-row { border-bottom: 1px solid var(--line); position: relative; }
