@@ -97,8 +97,8 @@ overall_rank,position,position_rank,name,team,auction_value,bye_week,source_last
 96,TE,9,George Kittle,SF,,8,7/19/2026
 97,WR,41,Makai Lemon,PHI,,10,7/19/2026
 98,QB,13,Patrick Mahomes II,KC,,5,7/19/2026
-99,WR,42,Michael Wilson,ARI,,14,7/19/2026
-100,QB,14,Bo Nix,DEN,,10,7/19/2026
+99,QB,14,Bo Nix,DEN,,10,7/19/2026
+100,WR,42,Michael Wilson,ARI,,14,7/19/2026
 101,QB,15,Matthew Stafford,LAR,,11,7/19/2026
 102,WR,43,Ricky Pearsall,SF,,8,7/19/2026
 103,TE,10,Dalton Kincaid,BUF,,7,7/19/2026
@@ -184,18 +184,18 @@ overall_rank,position,position_rank,name,team,auction_value,bye_week,source_last
 183,WR,68,Ryan Flournoy,DAL,,14,7/19/2026
 184,WR,69,Isaac TeSlaa,DET,,6,7/19/2026
 185,WR,70,Stefon Diggs,FA,,,7/19/2026
-186,RB,58,James Conner,ARI,,14,7/19/2026
-187,DST,10,Los Angeles Chargers,LAC,,7,7/19/2026
-188,K,2,Cameron Dicker,LAC,,7,7/19/2026
-189,K,3,Ka'imi Fairbairn,HOU,,8,7/19/2026
-190,RB,59,Ray Davis,BUF,,7,7/19/2026
-191,WR,71,Troy Franklin,DEN,,10,7/19/2026
+186,DST,10,Los Angeles Chargers,LAC,,7,7/19/2026
+187,K,2,Cameron Dicker,LAC,,7,7/19/2026
+188,K,3,Ka'imi Fairbairn,HOU,,8,7/19/2026
+189,RB,58,James Conner,ARI,,14,7/19/2026
+190,WR,71,Troy Franklin,DEN,,10,7/19/2026
+191,RB,59,Ray Davis,BUF,,7,7/19/2026
 192,TE,23,Dalton Schultz,HOU,,8,7/19/2026
 193,RB,60,Kimani Vidal,LAC,,7,7/19/2026
 194,RB,61,Emmett Johnson,KC,,5,7/19/2026
 195,K,4,Cam Little,JAC,,7,7/19/2026
-196,RB,62,Sean Tucker,TB,,10,7/19/2026
-197,K,5,Jason Myers,SEA,,11,7/19/2026
+196,K,5,Jason Myers,SEA,,11,7/19/2026
+197,RB,62,Sean Tucker,TB,,10,7/19/2026
 198,RB,63,Nicholas Singleton,TEN,,9,7/19/2026
 199,DST,11,Baltimore Ravens,BAL,,13,7/19/2026
 200,WR,72,Darnell Mooney,NYG,,8,7/19/2026
@@ -203,8 +203,8 @@ overall_rank,position,position_rank,name,team,auction_value,bye_week,source_last
 202,DST,12,Green Bay Packers,GB,,11,7/19/2026
 203,WR,74,Jaylin Noel,HOU,,8,7/19/2026
 204,RB,64,Kaytron Allen,WAS,,7,7/19/2026
-205,QB,27,Jacoby Brissett,ARI,,14,7/19/2026
-206,TE,24,T.J. Hockenson,MIN,,6,7/19/2026
+205,TE,24,T.J. Hockenson,MIN,,6,7/19/2026
+206,QB,27,Jacoby Brissett,ARI,,14,7/19/2026
 207,K,6,Eddy Pineiro,SF,,8,7/19/2026
 208,K,7,Tyler Loop,BAL,,13,7/19/2026
 209,WR,75,Antonio Williams,WAS,,7,7/19/2026
@@ -221,11 +221,11 @@ overall_rank,position,position_rank,name,team,auction_value,bye_week,source_last
 220,WR,78,Dontayvion Wicks,PHI,,10,7/19/2026
 221,DST,16,Buffalo Bills,BUF,,7,7/19/2026
 222,WR,79,Pat Bryant,DEN,,10,7/19/2026
-223,WR,80,Chimere Dike,TEN,,9,7/19/2026
-224,TE,26,Gunnar Helm,TEN,,9,7/19/2026
-225,WR,81,Tank Dell,HOU,,8,7/19/2026
-226,WR,82,De'Zhaun Stribling,SF,,8,7/19/2026
-227,RB,66,MarShawn Lloyd,GB,,11,7/19/2026
+223,RB,66,MarShawn Lloyd,GB,,11,7/19/2026
+224,WR,80,Chimere Dike,TEN,,9,7/19/2026
+225,TE,26,Gunnar Helm,TEN,,9,7/19/2026
+226,WR,81,Tank Dell,HOU,,8,7/19/2026
+227,WR,82,De'Zhaun Stribling,SF,,8,7/19/2026
 228,TE,27,Pat Freiermuth,PIT,,9,7/19/2026
 229,K,11,Jake Bates,DET,,6,7/19/2026
 230,WR,83,Malik Washington,MIA,,6,7/19/2026
@@ -250,9 +250,9 @@ overall_rank,position,position_rank,name,team,auction_value,bye_week,source_last
 249,RB,69,Malik Davis,DAL,,14,7/19/2026
 250,WR,91,Elijah Sarratt,BAL,,13,7/19/2026
 251,TE,31,Evan Engram,DEN,,10,7/19/2026
-252,RB,70,Justice Hill,BAL,,13,7/19/2026
-253,WR,92,Tory Horton,SEA,,11,7/19/2026
-254,RB,71,Demond Claiborne,MIN,,6,7/19/2026
+252,RB,70,Demond Claiborne,MIN,,6,7/19/2026
+253,RB,71,Justice Hill,BAL,,13,7/19/2026
+254,WR,92,Tory Horton,SEA,,11,7/19/2026
 255,RB,72,Ty Johnson,BUF,,7,7/19/2026
 256,WR,93,Tyreek Hill,FA,,,7/19/2026
 257,RB,73,Chris Brooks,GB,,11,7/19/2026
@@ -262,8 +262,8 @@ overall_rank,position,position_rank,name,team,auction_value,bye_week,source_last
 261,TE,33,Greg Dulcich,MIA,,6,7/19/2026
 262,RB,75,Jordan James,SF,,8,7/19/2026
 263,WR,94,Jack Bech,LV,,13,7/19/2026
-264,RB,76,Kaleb Johnson,PIT,,9,7/19/2026
-265,RB,77,DJ Giddens,IND,,13,7/19/2026
+264,RB,76,DJ Giddens,IND,,13,7/19/2026
+265,RB,77,Kaleb Johnson,PIT,,9,7/19/2026
 266,WR,95,Christian Kirk,SF,,8,7/19/2026
 267,RB,78,Devin Neal,NO,,8,7/19/2026
 268,TE,34,Theo Johnson,NYG,,8,7/19/2026
@@ -277,11 +277,11 @@ overall_rank,position,position_rank,name,team,auction_value,bye_week,source_last
 276,RB,80,George Holani,SEA,,11,7/19/2026
 277,TE,35,Mason Taylor,NYJ,,13,7/19/2026
 278,RB,81,Kaelon Black,SF,,8,7/19/2026
-279,RB,82,Isaiah Davis,NYJ,,13,7/19/2026
-280,QB,31,Tua Tagovailoa,ATL,,11,7/19/2026
+279,QB,31,Tua Tagovailoa,ATL,,11,7/19/2026
+280,RB,82,Isaiah Davis,NYJ,,13,7/19/2026
 281,RB,83,Kendre Miller,NO,,8,7/19/2026
-282,WR,101,Chris Brazzell II,CAR,,5,7/19/2026
-283,RB,84,Trey Benson,ARI,,14,7/19/2026
+282,RB,84,Trey Benson,ARI,,14,7/19/2026
+283,WR,101,Chris Brazzell II,CAR,,5,7/19/2026
 284,WR,102,Kyle Williams,NE,,11,7/19/2026
 285,K,17,Will Reichard,MIN,,6,7/19/2026
 286,DST,17,Atlanta Falcons,ATL,,11,7/19/2026
@@ -294,8 +294,8 @@ overall_rank,position,position_rank,name,team,auction_value,bye_week,source_last
 293,RB,86,Emari Demercado,KC,,5,7/19/2026
 294,TE,36,Mike Gesicki,CIN,,6,7/19/2026
 295,WR,106,Hollywood Brown,PHI,,10,7/19/2026
-296,RB,87,Najee Harris,LAC,,7,7/19/2026
-297,RB,88,Adam Randall,BAL,,13,7/19/2026
-298,WR,107,Mack Hollins,NE,,11,7/19/2026
+296,RB,87,Adam Randall,BAL,,13,7/19/2026
+297,WR,107,Mack Hollins,NE,,11,7/19/2026
+298,RB,88,Najee Harris,LAC,,7,7/19/2026
 299,TE,37,Oscar Delp,NO,,8,7/19/2026
 300,RB,89,Brashard Smith,KC,,5,7/19/2026
