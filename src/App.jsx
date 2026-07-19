@@ -41,6 +41,14 @@ const CSV_SOURCES = {
 };
 const WEB_SOURCE_NAME = "FantasyFootballCalculator.com";
 
+/* Freshest CSVs come straight from the bot's rankings-data branch via
+   GitHub's raw CDN (CORS-open, ~5 min edge cache) — no PR, merge, or
+   redeploy needed for a rankings update. The copies deployed with the
+   site remain the fallback, which also keeps the offline path working
+   (the service worker only caches same-origin files). */
+const RANKINGS_BRANCH_BASE =
+  "https://raw.githubusercontent.com/choselle/draft-day/rankings-data/public/";
+
 const POS_COLOR = {
   QB: "#EF6461",
   RB: "#4EC488",
@@ -558,9 +566,15 @@ export default function DraftDay() {
           : "csv";
       const def = CSV_SOURCES[sourceKey];
       setSeedStatus("loading");
-      for (const fileName of def.files(format)) {
+      /* Per candidate file: rankings-data branch first (freshest), then
+         the copy deployed with the site (works offline via the SW). */
+      const attempts = def.files(format).flatMap((fileName) => [
+        { fileName, url: `${RANKINGS_BRANCH_BASE}${fileName}` },
+        { fileName, url: `${import.meta.env.BASE_URL}${fileName}` },
+      ]);
+      for (const { fileName, url } of attempts) {
         try {
-          const res = await fetch(`${import.meta.env.BASE_URL}${fileName}`, {
+          const res = await fetch(url, {
             cache: "no-store",
           });
           if (!res.ok) throw new Error(`${fileName} not found`);

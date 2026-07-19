@@ -41,9 +41,11 @@ defines them):
 (ESPN only publishes PPR and Standard sheets and calls PPR near-identical
 to Half PPR, hence the Half PPR fallback. FantasyPros publishes all three.)
 
-A separate bot process (`lars-draft-bot`) watches ESPN's sheet and opens a
-PR updating these files whenever it changes; merging the PR redeploys the
-site. The ESPN header format
+A separate bot process (`lars-draft-bot`) watches the source sheets and
+pushes updated files to the **`rankings-data` branch**. The app fetches
+each CSV from that branch first (via raw.githubusercontent.com — no PR,
+merge, or redeploy needed for a data update) and falls back to the copies
+deployed with the site, which also keeps the offline path working. The ESPN header format
 (`overall_rank,position,position_rank,name,team,auction_value,bye_week,source_last_update_date`)
 parses as-is, and generic headers (`rank,name,pos,team,bye,adp` in any
 order), TSV, headerless, and loose lines all work too.
