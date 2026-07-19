@@ -25,19 +25,21 @@ Fully compatible with the **Cloudflare Pages free tier**.
 
 ## Rankings sources
 
-### ESPN CSVs (default, updated by the bot)
+### Drop-in CSVs (default, updated by the bot)
 
-The app seeds from `public/players-<scoring>.csv` for the selected scoring
-format:
+Two CSV providers ship with the site (pick one from the source tiles or
+the dropdown next to the search bar; `CSV_SOURCES` in `src/App.jsx`
+defines them):
 
-| Scoring  | File tried first          | Fallbacks                        |
-| -------- | ------------------------- | -------------------------------- |
-| PPR      | `players-ppr.csv`         | `players.csv`                    |
-| Half PPR | `players-half-ppr.csv`    | `players-ppr.csv`, `players.csv` |
-| Standard | `players-standard.csv`    | `players.csv`                    |
+| Provider    | Scoring  | File tried first                   | Fallbacks                        |
+| ----------- | -------- | ---------------------------------- | -------------------------------- |
+| ESPN        | PPR      | `players-ppr.csv`                  | `players.csv`                    |
+| ESPN        | Half PPR | `players-half-ppr.csv`             | `players-ppr.csv`, `players.csv` |
+| ESPN        | Standard | `players-standard.csv`             | `players.csv`                    |
+| FantasyPros | any      | `players-fantasypros-<scoring>.csv` | —                                |
 
 (ESPN only publishes PPR and Standard sheets and calls PPR near-identical
-to Half PPR, hence the Half PPR fallback.)
+to Half PPR, hence the Half PPR fallback. FantasyPros publishes all three.)
 
 A separate bot process (`lars-draft-bot`) watches ESPN's sheet and opens a
 PR updating these files whenever it changes; merging the PR redeploys the

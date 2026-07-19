@@ -21,8 +21,24 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from "react"
 const POSITIONS = ["QB", "RB", "WR", "TE", "K", "DST"];
 
 /* Where each rankings source comes from, shown throughout the UI.
-   A CSV can override its own name with a first line like "# source: FantasyPros". */
-const CSV_SOURCE_NAME = "ESPN";
+   CSV providers are keyed by the rankingsSource value ("csv" stays the
+   ESPN key for saved-state compatibility); each maps a scoring format
+   to the drop-in files tried in order. A CSV can still override its own
+   display name with a first line like "# source: SomeSite". */
+const CSV_SOURCES = {
+  csv: {
+    label: "ESPN",
+    /* ESPN publishes no half-PPR sheet; their PPR list is near-identical */
+    files: (fmt) =>
+      fmt === "half-ppr"
+        ? ["players-half-ppr.csv", "players-ppr.csv", "players.csv"]
+        : [`players-${fmt}.csv`, "players.csv"],
+  },
+  fantasypros: {
+    label: "FantasyPros",
+    files: (fmt) => [`players-fantasypros-${fmt}.csv`],
+  },
+};
 const WEB_SOURCE_NAME = "FantasyFootballCalculator.com";
 
 const POS_COLOR = {
@@ -528,20 +544,21 @@ export default function DraftDay() {
     [flash]
   );
 
-  /* Fetch the drop-in seed file shipped with the site. Tries the file for
-     the selected scoring (public/players-<scoring>.csv) first, then falls
-     back to the generic public/players.csv. */
+  /* Fetch a drop-in seed file shipped with the site for the given CSV
+     provider (ESPN or FantasyPros), trying that provider's candidate
+     files for the selected scoring in order. */
   const seedFromFile = useCallback(
-    async (announce, fmtOverride) => {
+    async (announce, fmtOverride, sourceOverride) => {
       const format = typeof fmtOverride === "string" ? fmtOverride : scoring;
+      const sourceKey =
+        sourceOverride && CSV_SOURCES[sourceOverride]
+          ? sourceOverride
+          : CSV_SOURCES[rankingsSource]
+          ? rankingsSource
+          : "csv";
+      const def = CSV_SOURCES[sourceKey];
       setSeedStatus("loading");
-      /* ESPN publishes PPR and Standard sheets only; their PPR list is
-         near-identical to Half PPR, so Half PPR falls back to the PPR file. */
-      const candidates =
-        format === "half-ppr"
-          ? ["players-half-ppr.csv", "players-ppr.csv", "players.csv"]
-          : [`players-${format}.csv`, "players.csv"];
-      for (const fileName of candidates) {
+      for (const fileName of def.files(format)) {
         try {
           const res = await fetch(`${import.meta.env.BASE_URL}${fileName}`, {
             cache: "no-store",
@@ -563,7 +580,7 @@ export default function DraftDay() {
                   day: "numeric",
                 })
               : null);
-          const sourceName = parsed.sourceNote || CSV_SOURCE_NAME;
+          const sourceName = parsed.sourceNote || def.label;
           applyNewRankings(
             parsed.players,
             announce
@@ -571,7 +588,7 @@ export default function DraftDay() {
               : null,
             { kind: "csv", label: `${sourceName} (${fileName})`, updated }
           );
-          setRankingsSource("csv");
+          setRankingsSource(sourceKey);
           setSeedStatus("done");
           return;
         } catch {
@@ -580,11 +597,9 @@ export default function DraftDay() {
       }
       setSeedStatus("error");
       if (announce)
-        flash(
-          `Couldn't load the ${CSV_SOURCE_NAME} CSVs — previous list kept.`
-        );
+        flash(`Couldn't load the ${def.label} CSVs — previous list kept.`);
     },
-    [applyNewRankings, scoring, flash]
+    [applyNewRankings, scoring, rankingsSource, flash]
   );
 
   /* One-click live update via the site's /api/rankings Pages Function
@@ -641,7 +656,7 @@ export default function DraftDay() {
     (value) => {
       setScoring(value);
       if (rankingsSource === "web") updateFromWeb(value);
-      else if (rankingsSource === "csv") seedFromFile(true, value);
+      else if (CSV_SOURCES[rankingsSource]) seedFromFile(true, value);
     },
     [rankingsSource, updateFromWeb, seedFromFile]
   );
@@ -1378,12 +1393,16 @@ export default function DraftDay() {
                 disabled={seedStatus === "loading" || webStatus === "loading"}
                 onChange={(e) => {
                   const v = e.target.value;
-                  if (v === "csv") seedFromFile(true);
+                  if (CSV_SOURCES[v]) seedFromFile(true, undefined, v);
                   else if (v === "web") updateFromWeb();
                   else restoreImport();
                 }}
               >
-                <option value="csv">{CSV_SOURCE_NAME}</option>
+                {Object.entries(CSV_SOURCES).map(([key, def]) => (
+                  <option key={key} value={key}>
+                    {def.label}
+                  </option>
+                ))}
                 <option value="web">Live ADP</option>
                 {(rankingsSource === "import" || storedImport) && (
                   <option value="import">Imported</option>
@@ -2296,14 +2315,17 @@ function RankingsSourcePanel({
   return (
     <>
       <div className="dd-source-row">
-        <button
-          className={`dd-source ${rankingsSource === "csv" ? "on" : ""}`}
-          onClick={() => seedFromFile(true)}
-          disabled={busy}
-        >
-          <b>{CSV_SOURCE_NAME}</b>
-          <small>my sheet · auto-updated</small>
-        </button>
+        {Object.entries(CSV_SOURCES).map(([key, def]) => (
+          <button
+            key={key}
+            className={`dd-source ${rankingsSource === key ? "on" : ""}`}
+            onClick={() => seedFromFile(true, undefined, key)}
+            disabled={busy}
+          >
+            <b>{def.label}</b>
+            <small>my sheet · auto-updated</small>
+          </button>
+        ))}
         <button
           className={`dd-source ${rankingsSource === "web" ? "on" : ""}`}
           onClick={() => updateFromWeb()}
@@ -2358,11 +2380,12 @@ function RankingsSourcePanel({
           )}
         </div>
       )}
-      {!compact && rankingsSource === "csv" && (
+      {!compact && CSV_SOURCES[rankingsSource] && (
         <p className="dd-hint">
-          {CSV_SOURCE_NAME} sheets ship with the site and update automatically
-          when new rankings are published — the latest list loads on its own.
-          Half PPR uses the PPR sheet.
+          {CSV_SOURCES[rankingsSource].label} sheets ship with the site and
+          update automatically when new rankings are published — the latest
+          list loads on its own.
+          {rankingsSource === "csv" ? " Half PPR uses the PPR sheet." : ""}
         </p>
       )}
       {!compact && rankingsSource === "web" && (
