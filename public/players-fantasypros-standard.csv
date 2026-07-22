@@ -36,9 +36,9 @@ overall_rank,position,position_rank,name,team,auction_value,bye_week,source_last
 35,RB,14,Josh Jacobs,GB,,11,7/22/2026
 36,WR,17,Emeka Egbuka,TB,,10,7/22/2026
 37,RB,15,Javonte Williams,DAL,,14,7/22/2026
-38,TE,3,Colston Loveland,CHI,,10,7/22/2026
-39,QB,4,Joe Burrow,CIN,,6,7/22/2026
-40,RB,16,Breece Hall,NYJ,,13,7/22/2026
+38,QB,4,Joe Burrow,CIN,,6,7/22/2026
+39,RB,16,Breece Hall,NYJ,,13,7/22/2026
+40,TE,3,Colston Loveland,CHI,,10,7/22/2026
 41,RB,17,Jeremiyah Love,ARI,,14,7/22/2026
 42,WR,18,Davante Adams,LAR,,11,7/22/2026
 43,WR,19,Malik Nabers,NYG,,8,7/22/2026
@@ -70,24 +70,24 @@ overall_rank,position,position_rank,name,team,auction_value,bye_week,source_last
 69,WR,30,Marvin Harrison Jr.,ARI,,14,7/22/2026
 70,WR,31,Alec Pierce,IND,,13,7/22/2026
 71,RB,27,Tony Pollard,TEN,,9,7/22/2026
-72,RB,28,Jaylen Warren,PIT,,9,7/22/2026
-73,QB,9,Trevor Lawrence,JAC,,7,7/22/2026
+72,QB,9,Trevor Lawrence,JAC,,7,7/22/2026
+73,RB,28,Jaylen Warren,PIT,,9,7/22/2026
 74,WR,32,DK Metcalf,PIT,,9,7/22/2026
 75,WR,33,Carnell Tate,TEN,,9,7/22/2026
 76,WR,34,Brian Thomas Jr.,JAC,,7,7/22/2026
 77,QB,10,Dak Prescott,DAL,,14,7/22/2026
 78,RB,29,Chuba Hubbard,CAR,,5,7/22/2026
 79,WR,35,Courtland Sutton,DEN,,10,7/22/2026
-80,RB,30,Rico Dowdle,PIT,,9,7/22/2026
-81,RB,31,Rhamondre Stevenson,NE,,11,7/22/2026
+80,RB,30,Rhamondre Stevenson,NE,,11,7/22/2026
+81,RB,31,Rico Dowdle,PIT,,9,7/22/2026
 82,TE,6,Sam LaPorta,DET,,6,7/22/2026
 83,TE,7,Harold Fannin Jr.,CLE,,11,7/22/2026
 84,TE,8,Kyle Pitts Sr.,ATL,,11,7/22/2026
 85,RB,32,Blake Corum,LAR,,11,7/22/2026
 86,RB,33,J.K. Dobbins,DEN,,10,7/22/2026
 87,RB,34,Kyle Monangai,CHI,,10,7/22/2026
-88,QB,11,Jaxson Dart,NYG,,8,7/22/2026
-89,WR,36,Parker Washington,JAC,,7,7/22/2026
+88,WR,36,Parker Washington,JAC,,7,7/22/2026
+89,QB,11,Jaxson Dart,NYG,,8,7/22/2026
 90,WR,37,Quentin Johnston,LAC,,7,7/22/2026
 91,WR,38,Jordyn Tyson,NO,,8,7/22/2026
 92,QB,12,Brock Purdy,SF,,8,7/22/2026
@@ -131,8 +131,8 @@ overall_rank,position,position_rank,name,team,auction_value,bye_week,source_last
 130,RB,45,Woody Marks,HOU,,8,7/22/2026
 131,WR,51,Romeo Doubs,NE,,11,7/22/2026
 132,RB,46,Zach Charbonnet,SEA,,11,7/22/2026
-133,WR,52,Khalil Shakir,BUF,,7,7/22/2026
-134,RB,47,Isiah Pacheco,DET,,6,7/22/2026
+133,RB,47,Isiah Pacheco,DET,,6,7/22/2026
+134,WR,52,Khalil Shakir,BUF,,7,7/22/2026
 135,WR,53,Matthew Golden,GB,,11,7/22/2026
 136,QB,21,Malik Willis,MIA,,6,7/22/2026
 137,WR,54,Rashid Shaheed,SEA,,11,7/22/2026
@@ -160,16 +160,16 @@ overall_rank,position,position_rank,name,team,auction_value,bye_week,source_last
 159,DST,2,Denver Broncos,DEN,,10,7/22/2026
 160,QB,25,Bryce Young,CAR,,5,7/22/2026
 161,WR,59,Denzel Boston,CLE,,11,7/22/2026
-162,QB,26,Daniel Jones,IND,,13,7/22/2026
-163,WR,60,Jalen McMillan,TB,,10,7/22/2026
+162,WR,60,Jalen McMillan,TB,,10,7/22/2026
+163,QB,26,Daniel Jones,IND,,13,7/22/2026
 164,WR,61,Omar Cooper Jr.,NYJ,,13,7/22/2026
 165,WR,62,Adonai Mitchell,NYJ,,13,7/22/2026
 166,DST,3,Seattle Seahawks,SEA,,11,7/22/2026
 167,DST,4,Los Angeles Rams,LAR,,11,7/22/2026
 168,WR,63,Tre Tucker,LV,,13,7/22/2026
 169,RB,56,Emanuel Wilson,SEA,,11,7/22/2026
-170,DST,5,Philadelphia Eagles,PHI,,10,7/22/2026
-171,WR,64,Travis Hunter,JAC,,7,7/22/2026
+170,WR,64,Travis Hunter,JAC,,7,7/22/2026
+171,DST,5,Philadelphia Eagles,PHI,,10,7/22/2026
 172,WR,65,Tre' Harris,LAC,,7,7/22/2026
 173,WR,66,Kayshon Boutte,NE,,11,7/22/2026
 174,TE,21,AJ Barner,SEA,,11,7/22/2026
@@ -189,8 +189,8 @@ overall_rank,position,position_rank,name,team,auction_value,bye_week,source_last
 188,RB,58,Ray Davis,BUF,,7,7/22/2026
 189,K,2,Cameron Dicker,LAC,,7,7/22/2026
 190,K,3,Ka'imi Fairbairn,HOU,,8,7/22/2026
-191,RB,59,James Conner,ARI,,14,7/22/2026
-192,WR,71,Troy Franklin,DEN,,10,7/22/2026
+191,WR,71,Troy Franklin,DEN,,10,7/22/2026
+192,RB,59,James Conner,ARI,,14,7/22/2026
 193,RB,60,Nicholas Singleton,TEN,,9,7/22/2026
 194,RB,61,Emmett Johnson,KC,,5,7/22/2026
 195,K,4,Cam Little,JAC,,7,7/22/2026
@@ -236,10 +236,10 @@ overall_rank,position,position_rank,name,team,auction_value,bye_week,source_last
 235,WR,85,Cooper Kupp,SEA,,11,7/22/2026
 236,K,13,Harrison Mevis,LAR,,11,7/22/2026
 237,TE,29,Cade Otton,TB,,10,7/22/2026
-238,WR,86,Brandon Aiyuk,SF,,8,7/22/2026
-239,QB,28,Aaron Rodgers,PIT,,9,7/22/2026
-240,QB,29,Geno Smith,NYJ,,13,7/22/2026
-241,WR,87,Germie Bernard,PIT,,9,7/22/2026
+238,QB,28,Aaron Rodgers,PIT,,9,7/22/2026
+239,QB,29,Geno Smith,NYJ,,13,7/22/2026
+240,WR,86,Germie Bernard,PIT,,9,7/22/2026
+241,WR,87,Brandon Aiyuk,SF,,8,7/22/2026
 242,TE,30,Colby Parkinson,LAR,,11,7/22/2026
 243,WR,88,Zachariah Branch,ATL,,11,7/22/2026
 244,K,14,Harrison Butker,KC,,5,7/22/2026
@@ -260,8 +260,8 @@ overall_rank,position,position_rank,name,team,auction_value,bye_week,source_last
 259,TE,33,Greg Dulcich,MIA,,6,7/22/2026
 260,RB,74,Chris Brooks,GB,,11,7/22/2026
 261,WR,94,Jack Bech,LV,,13,7/22/2026
-262,QB,30,Fernando Mendoza,LV,,13,7/22/2026
-263,RB,75,Kaleb Johnson,PIT,,9,7/22/2026
+262,RB,75,Kaleb Johnson,PIT,,9,7/22/2026
+263,QB,30,Fernando Mendoza,LV,,13,7/22/2026
 264,RB,76,Devin Neal,NO,,8,7/22/2026
 265,WR,95,Christian Kirk,SF,,8,7/22/2026
 266,RB,77,DJ Giddens,IND,,13,7/22/2026
@@ -290,9 +290,9 @@ overall_rank,position,position_rank,name,team,auction_value,bye_week,source_last
 289,RB,84,Devin Singletary,NYG,,8,7/22/2026
 290,RB,85,Emari Demercado,KC,,5,7/22/2026
 291,WR,104,Devaughn Vele,NO,,8,7/22/2026
-292,WR,105,Keenan Allen,LAC,,7,7/22/2026
-293,TE,36,Oscar Delp,NO,,8,7/22/2026
-294,RB,86,Najee Harris,LAC,,7,7/22/2026
+292,TE,36,Oscar Delp,NO,,8,7/22/2026
+293,RB,86,Najee Harris,LAC,,7,7/22/2026
+294,WR,105,Keenan Allen,LAC,,7,7/22/2026
 295,WR,106,Hollywood Brown,PHI,,10,7/22/2026
 296,TE,37,Mike Gesicki,CIN,,6,7/22/2026
 297,WR,107,Mack Hollins,NE,,11,7/22/2026
