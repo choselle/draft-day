@@ -20,7 +20,7 @@ Fully compatible with the **Cloudflare Pages free tier**.
 - Searchable player pool with rank, position, team, and bye week; position filters and target stars
 - Sticker-wall draft board, roster view with position counts
 - Value badges (+N) when a player falls past their ADP or rank
-- **Draft Edge** (on by default; logic in `src/draftEdge.js`): compares a
+- **Draft Edge** (opt-in; logic in `src/draftEdge.js`): compares a
   Primary (value) ranking list against a Comparison (draft-room cost)
   list — defaults FantasyPros vs ESPN, any two sources work. Subtle
   per-row badges (`Value +12`, `ESPN +8`, `Closing`, `Likely There`,

@@ -49,10 +49,10 @@ const CTX = {
 };
 
 describe("settings", () => {
-  it("defaults to enabled, FantasyPros primary vs ESPN comparison, subtle", () => {
+  it("defaults to disabled, FantasyPros primary vs ESPN comparison, subtle", () => {
     const s = normalizeEdgeSettings(null);
     expect(s).toEqual({
-      enabled: true,
+      enabled: false,
       primary: "fantasypros",
       comparison: "csv",
       level: "subtle",
@@ -60,12 +60,12 @@ describe("settings", () => {
     expect(EDGE_DEFAULTS.level).toBe("subtle");
   });
 
-  it("preserves saved choices, including disabled", () => {
+  it("preserves saved choices, including enabled", () => {
     const s = normalizeEdgeSettings(
-      { enabled: false, primary: "csv", comparison: "web", level: "detailed" },
+      { enabled: true, primary: "csv", comparison: "web", level: "detailed" },
       ["csv", "fantasypros", "web"]
     );
-    expect(s.enabled).toBe(false);
+    expect(s.enabled).toBe(true);
     expect(s.primary).toBe("csv");
     expect(s.comparison).toBe("web");
     expect(s.level).toBe("detailed");

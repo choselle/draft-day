@@ -21,7 +21,7 @@ import { pickLabel } from "./snake.js";
 export const EDGE_LEVELS = ["off", "subtle", "detailed"];
 
 export const EDGE_DEFAULTS = {
-  enabled: true,
+  enabled: false, // opt-in from Setup or the More tab
   primary: "fantasypros", // FantasyPros
   comparison: "csv", // "csv" is the ESPN key (saved-state compatibility)
   level: "subtle",
