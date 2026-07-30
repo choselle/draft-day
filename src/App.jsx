@@ -1,4 +1,28 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import { teamForPick, overallFor, pickLabel } from "./snake.js";
+import {
+  makeId,
+  normName,
+  TEAM_ALIAS,
+  buildMatchMaps,
+  matchPlayer,
+} from "./playerMatch.js";
+import {
+  EDGE_LEVELS,
+  normalizeEdgeSettings,
+  stageGapThreshold,
+  consensusBand,
+  availabilityFor,
+  availabilityText,
+  buildEdgeIndex,
+  chooseIndicator,
+  recommendationFor,
+  edgeExplanation,
+  buildEdgeRows,
+  filterEdgeRows,
+  positionPairNote,
+  formatGap,
+} from "./draftEdge.js";
 
 /* ============================================================
    DRAFT DAY — live fantasy football draft tracker
@@ -15,6 +39,9 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from "react"
      in-app paste/upload of any CSV (rank/name/pos/team/bye/ADP)
      overrides at any time
    - Value badges when a player falls past their rank or ADP
+   - DRAFT EDGE: optionally compares a Primary (value) ranking list
+     against a Comparison (draft-room cost) list — subtle per-row
+     badges plus a dedicated tab; logic lives in draftEdge.js
    - Sticker-wall draft board, roster view, auto-saves progress
    ============================================================ */
 
@@ -58,37 +85,7 @@ const POS_COLOR = {
   DST: "#98A4B3",
 };
 
-function makeId(name, team) {
-  return (
-    String(name).toLowerCase().replace(/[^a-z0-9]/g, "") +
-    "-" +
-    String(team || "").toLowerCase()
-  );
-}
-
-function normName(name) {
-  return String(name)
-    .toLowerCase()
-    .replace(/\b(jr|sr|ii|iii|iv|v)\b\.?/g, "")
-    .replace(/[^a-z]/g, "");
-}
-
-/* ---------- snake-draft math ---------- */
-function teamForPick(overall, numTeams) {
-  const r = Math.floor((overall - 1) / numTeams);
-  const i = (overall - 1) % numTeams;
-  return r % 2 === 0 ? i : numTeams - 1 - i;
-}
-function overallFor(teamIdx, round, numTeams) {
-  const r = round - 1;
-  const i = r % 2 === 0 ? teamIdx : numTeams - 1 - teamIdx;
-  return r * numTeams + i + 1;
-}
-function pickLabel(overall, numTeams) {
-  const r = Math.floor((overall - 1) / numTeams) + 1;
-  const i = ((overall - 1) % numTeams) + 1;
-  return `${r}.${String(i).padStart(2, "0")}`;
-}
+/* Snake-draft math lives in snake.js (shared with Draft Edge). */
 
 /* ---------- responsive: wide screens get the split dashboard ---------- */
 const WIDE_QUERY = "(min-width: 1000px)";
@@ -272,35 +269,74 @@ function parseImport(text) {
   return { players, errors, updatedNote, sourceNote };
 }
 
-/* ---------- cross-source player matching ----------
-   Sources spell players differently (suffixes, punctuation) and name
-   team defenses differently ("Broncos D/ST" vs "Denver Broncos"), so
-   picks re-link across sources by normalized name + position, with a
-   name-only fallback that refuses ambiguous matches. DSTs match by
-   team code. */
-const TEAM_ALIAS = { jac: "jax", la: "lar", wsh: "was", sd: "lac" };
-function dstKey(team) {
-  const t = String(team || "").toLowerCase();
-  return `dst|${TEAM_ALIAS[t] || t}`;
-}
-function buildMatchMaps(players) {
-  const byKey = new Map(); // "name|pos" and "dst|team"
-  const byName = new Map(); // normName -> player, or null when ambiguous
-  for (const p of players) {
-    if (p.pos === "DST") {
-      byKey.set(dstKey(p.team), p);
-      continue;
+/* Cross-source player matching lives in playerMatch.js (shared with
+   Draft Edge's two-list comparison). */
+
+/* ---------- shared list fetchers ----------
+   Used both to swap the active rankings and to load Draft Edge's
+   second list without touching the active one. */
+async function fetchCsvList(sourceKey, format) {
+  const def = CSV_SOURCES[sourceKey];
+  const attempts = def.files(format).flatMap((fileName) => [
+    { fileName, url: `${RANKINGS_BRANCH_BASE}${fileName}` },
+    { fileName, url: `${import.meta.env.BASE_URL}${fileName}` },
+  ]);
+  for (const { fileName, url } of attempts) {
+    try {
+      const res = await fetch(url, { cache: "no-store" });
+      if (!res.ok) throw new Error(`${fileName} not found`);
+      /* Hosts with SPA fallback answer missing files with index.html */
+      if ((res.headers.get("content-type") || "").includes("text/html"))
+        throw new Error(`${fileName} not found`);
+      const text = await res.text();
+      const lastMod = res.headers.get("last-modified");
+      const parsed = parseImport(text);
+      if (!parsed.players.length) throw new Error(`${fileName} was empty`);
+      const updated =
+        parsed.updatedNote ||
+        (lastMod
+          ? new Date(lastMod).toLocaleDateString(undefined, {
+              year: "numeric",
+              month: "short",
+              day: "numeric",
+            })
+          : null);
+      const sourceName = parsed.sourceNote || def.label;
+      return { players: parsed.players, sourceName, fileName, updated };
+    } catch {
+      /* try the next candidate file */
     }
-    const n = normName(p.name);
-    byKey.set(`${n}|${p.pos}`, p);
-    byName.set(n, byName.has(n) ? null : p);
   }
-  return { byKey, byName };
+  throw new Error(`Couldn't load the ${def.label} CSVs`);
 }
-function matchPlayer(maps, name, pos, team) {
-  if (pos === "DST") return maps.byKey.get(dstKey(team)) || null;
-  const n = normName(name);
-  return maps.byKey.get(`${n}|${pos}`) || maps.byName.get(n) || null;
+
+async function fetchWebList(format, numTeams) {
+  const res = await fetch(
+    `${import.meta.env.BASE_URL}api/rankings?format=${format}&teams=${numTeams}`,
+    { cache: "no-store" }
+  );
+  const data = await res.json();
+  if (!res.ok || !data.players || !data.players.length) {
+    throw new Error((data && data.error) || "No players returned");
+  }
+  const players = data.players.map((p, i) => ({
+    id: makeId(p.name, p.team),
+    rank: p.rank || i + 1,
+    name: p.name,
+    pos: p.pos,
+    team: p.team || "",
+    bye: p.bye || "",
+    adp: p.adp != null ? p.adp : null,
+  }));
+  return { players, format: data.format, year: data.year };
+}
+
+/* Display name for any selectable ranking source key */
+function sourceLabelFor(key) {
+  if (CSV_SOURCES[key]) return CSV_SOURCES[key].label;
+  if (key === "web") return "Live ADP";
+  if (key === "import") return "Imported";
+  return String(key || "");
 }
 
 /* ---------- storage (browser localStorage — per device) ---------- */
@@ -460,7 +496,25 @@ export default function DraftDay() {
   const [seedStatus, setSeedStatus] = useState("idle"); // idle | loading | done | error
   const [webStatus, setWebStatus] = useState("idle"); // idle | loading | done | error
 
-  const [tab, setTab] = useState("players"); // players | board | roster | more
+  /* Draft Edge: a primary (value) list compared against a comparison
+     (cost) list. Settings persist even while the feature is disabled. */
+  const [edge, setEdge] = useState(() =>
+    normalizeEdgeSettings(saved && saved.edge)
+  );
+  const [edgeLists, setEdgeLists] = useState({}); // `${key}|${scoring}` -> {status, players}
+  /* Subview + filters live here so they survive tab switches */
+  const [edgeView, setEdgeView] = useState("overview"); // overview | full | position
+  const [edgeFilters, setEdgeFilters] = useState({
+    pos: "ALL",
+    availableOnly: true,
+    watchOnly: false,
+    cat: "ALL",
+    window: "next2", // next | next2 | all
+  });
+  const [edgeSort, setEdgeSort] = useState({ key: "primary", dir: 1 });
+  const [edgePos, setEdgePos] = useState("RB"); // position-comparison view
+
+  const [tab, setTab] = useState("players"); // players | board | roster | edge | more
   const [search, setSearch] = useState("");
   const [posFilter, setPosFilter] = useState("ALL");
   const [showDrafted, setShowDrafted] = useState(false);
@@ -499,10 +553,11 @@ export default function DraftDay() {
         scoring,
         rankingsSource,
         rankingsMeta,
+        edge,
       });
     }, 400);
     return () => clearTimeout(t);
-  }, [phase, numTeams, numRounds, mySlot, teamNames, players, picks, keepers, targets, scoring, rankingsSource, rankingsMeta]);
+  }, [phase, numTeams, numRounds, mySlot, teamNames, players, picks, keepers, targets, scoring, rankingsSource, rankingsMeta, edge]);
 
   const flash = useCallback((msg) => {
     setToast(msg);
@@ -566,52 +621,28 @@ export default function DraftDay() {
           : "csv";
       const def = CSV_SOURCES[sourceKey];
       setSeedStatus("loading");
-      /* Per candidate file: rankings-data branch first (freshest), then
-         the copy deployed with the site (works offline via the SW). */
-      const attempts = def.files(format).flatMap((fileName) => [
-        { fileName, url: `${RANKINGS_BRANCH_BASE}${fileName}` },
-        { fileName, url: `${import.meta.env.BASE_URL}${fileName}` },
-      ]);
-      for (const { fileName, url } of attempts) {
-        try {
-          const res = await fetch(url, {
-            cache: "no-store",
-          });
-          if (!res.ok) throw new Error(`${fileName} not found`);
-          /* Hosts with SPA fallback answer missing files with index.html */
-          if ((res.headers.get("content-type") || "").includes("text/html"))
-            throw new Error(`${fileName} not found`);
-          const text = await res.text();
-          const lastMod = res.headers.get("last-modified");
-          const parsed = parseImport(text);
-          if (!parsed.players.length) throw new Error(`${fileName} was empty`);
-          const updated =
-            parsed.updatedNote ||
-            (lastMod
-              ? new Date(lastMod).toLocaleDateString(undefined, {
-                  year: "numeric",
-                  month: "short",
-                  day: "numeric",
-                })
-              : null);
-          const sourceName = parsed.sourceNote || def.label;
-          applyNewRankings(
-            parsed.players,
-            announce
-              ? `Loaded ${parsed.players.length} ${sourceName} players from ${fileName}`
-              : null,
-            { kind: "csv", label: `${sourceName} (${fileName})`, updated }
-          );
-          setRankingsSource(sourceKey);
-          setSeedStatus("done");
-          return;
-        } catch {
-          /* try the next candidate file */
-        }
+      try {
+        /* Per candidate file: rankings-data branch first (freshest), then
+           the copy deployed with the site (works offline via the SW). */
+        const r = await fetchCsvList(sourceKey, format);
+        applyNewRankings(
+          r.players,
+          announce
+            ? `Loaded ${r.players.length} ${r.sourceName} players from ${r.fileName}`
+            : null,
+          {
+            kind: "csv",
+            label: `${r.sourceName} (${r.fileName})`,
+            updated: r.updated,
+          }
+        );
+        setRankingsSource(sourceKey);
+        setSeedStatus("done");
+      } catch {
+        setSeedStatus("error");
+        if (announce)
+          flash(`Couldn't load the ${def.label} CSVs — previous list kept.`);
       }
-      setSeedStatus("error");
-      if (announce)
-        flash(`Couldn't load the ${def.label} CSVs — previous list kept.`);
     },
     [applyNewRankings, scoring, rankingsSource, flash]
   );
@@ -623,29 +654,16 @@ export default function DraftDay() {
       const format = typeof fmtOverride === "string" ? fmtOverride : scoring;
       setWebStatus("loading");
       try {
-        const res = await fetch(
-          `${import.meta.env.BASE_URL}api/rankings?format=${format}&teams=${numTeams}`,
-          { cache: "no-store" }
+        const { players: incoming, format: fmt, year } = await fetchWebList(
+          format,
+          numTeams
         );
-        const data = await res.json();
-        if (!res.ok || !data.players || !data.players.length) {
-          throw new Error((data && data.error) || "No players returned");
-        }
-        const incoming = data.players.map((p, i) => ({
-          id: makeId(p.name, p.team),
-          rank: p.rank || i + 1,
-          name: p.name,
-          pos: p.pos,
-          team: p.team || "",
-          bye: p.bye || "",
-          adp: p.adp != null ? p.adp : null,
-        }));
         applyNewRankings(
           incoming,
-          `Updated: ${incoming.length} players from ${WEB_SOURCE_NAME} (${data.format} ADP, ${data.year})`,
+          `Updated: ${incoming.length} players from ${WEB_SOURCE_NAME} (${fmt} ADP, ${year})`,
           {
             kind: "web",
-            label: `${WEB_SOURCE_NAME} ADP (${data.format}, ${data.year} season)`,
+            label: `${WEB_SOURCE_NAME} ADP (${fmt}, ${year} season)`,
             updated: new Date().toLocaleString(undefined, {
               month: "short",
               day: "numeric",
@@ -1030,6 +1048,8 @@ export default function DraftDay() {
     setEditOverall(null);
     setRankingsMeta(null);
     setRankingsSource("csv");
+    setEdge(normalizeEdgeSettings(null));
+    setEdgeLists({});
     seedFromFile(true);
   };
 
@@ -1090,6 +1110,203 @@ export default function DraftDay() {
     );
     setRankingsSource("import");
   }, [applyNewRankings, flash]);
+
+  /* ---------- Draft Edge: second-list loading & derived data ---------- */
+
+  /* My next two open picks (first may be the current pick when I'm on
+     the clock) — drives Closing / Likely There and the Edge tab window */
+  const myUpcoming = useMemo(() => {
+    const res = [];
+    if (currentPick == null) return res;
+    for (let p = currentPick; p <= totalPicks && res.length < 2; p++) {
+      if (!allPicks.has(p) && teamForPick(p, numTeams) === myIdx) res.push(p);
+    }
+    return res;
+  }, [currentPick, allPicks, myIdx, numTeams, totalPicks]);
+
+  /* Sources a Draft Edge role can point at. The two drop-in CSV sheets
+     are always offered; Imported appears once a list has been saved. */
+  const edgeSourceKeys = useMemo(
+    () => [
+      ...Object.keys(CSV_SOURCES),
+      "web",
+      ...(storedImport && storedImport.players ? ["import"] : []),
+    ],
+    [storedImport]
+  );
+
+  /* A saved role can point at a source that no longer exists (e.g. a
+     cleared import) — snap it back to a valid, distinct pair. */
+  useEffect(() => {
+    setEdge((prev) => {
+      const n = normalizeEdgeSettings(prev, edgeSourceKeys);
+      return n.primary === prev.primary &&
+        n.comparison === prev.comparison &&
+        n.level === prev.level &&
+        n.enabled === prev.enabled
+        ? prev
+        : n;
+    });
+  }, [edgeSourceKeys]);
+
+  /* Resolve the player list behind a source key: the live active list
+     when it matches, the stored import, or the fetched cache. */
+  const edgeListState = useCallback(
+    (key) => {
+      if (!key) return { status: "error", players: null };
+      if (key === rankingsSource && players.length)
+        return { status: "done", players };
+      if (key === "import") {
+        return storedImport && storedImport.players && storedImport.players.length
+          ? { status: "done", players: storedImport.players }
+          : { status: "error", players: null };
+      }
+      return edgeLists[`${key}|${scoring}`] || { status: "idle", players: null };
+    },
+    [rankingsSource, players, storedImport, edgeLists, scoring]
+  );
+
+  /* Fetch whichever selected lists aren't already available. Skipped
+     entirely while Draft Edge is disabled; errors wait for a manual
+     retry instead of looping. */
+  useEffect(() => {
+    if (!edge.enabled) return;
+    for (const key of [edge.primary, edge.comparison]) {
+      if (!key || key === rankingsSource || key === "import") continue;
+      if (!CSV_SOURCES[key] && key !== "web") continue;
+      const cacheKey = `${key}|${scoring}`;
+      if (edgeLists[cacheKey]) continue;
+      setEdgeLists((m) => ({ ...m, [cacheKey]: { status: "loading" } }));
+      (async () => {
+        try {
+          const r =
+            key === "web"
+              ? await fetchWebList(scoring, numTeams)
+              : await fetchCsvList(key, scoring);
+          setEdgeLists((m) => ({
+            ...m,
+            [cacheKey]: { status: "done", players: r.players },
+          }));
+        } catch {
+          setEdgeLists((m) => ({ ...m, [cacheKey]: { status: "error" } }));
+        }
+      })();
+    }
+  }, [edge.enabled, edge.primary, edge.comparison, scoring, rankingsSource, numTeams, edgeLists]);
+
+  const retryEdgeList = useCallback(
+    (key) => {
+      setEdgeLists((m) => {
+        const next = { ...m };
+        delete next[`${key}|${scoring}`];
+        return next;
+      });
+    },
+    [scoring]
+  );
+
+  const primaryListState = useMemo(
+    () => (edge.enabled ? edgeListState(edge.primary) : null),
+    [edge.enabled, edge.primary, edgeListState]
+  );
+  const comparisonListState = useMemo(
+    () => (edge.enabled ? edgeListState(edge.comparison) : null),
+    [edge.enabled, edge.comparison, edgeListState]
+  );
+
+  /* Both lists loaded, two distinct sources → comparisons can run */
+  const edgeActive = !!(
+    edge.enabled &&
+    edge.primary &&
+    edge.comparison &&
+    edge.primary !== edge.comparison &&
+    primaryListState &&
+    primaryListState.status === "done" &&
+    comparisonListState &&
+    comparisonListState.status === "done"
+  );
+
+  /* Per-source load info for settings / tab messaging */
+  const edgeListInfo = useMemo(() => {
+    if (!edge.enabled) return [];
+    return [
+      { key: edge.primary, role: "primary", state: primaryListState },
+      { key: edge.comparison, role: "comparison", state: comparisonListState },
+    ].map((x) => ({
+      ...x,
+      label: sourceLabelFor(x.key),
+      status: x.state ? x.state.status : "error",
+    }));
+  }, [edge.enabled, edge.primary, edge.comparison, primaryListState, comparisonListState]);
+
+  const edgeIndex = useMemo(() => {
+    if (!edgeActive) return null;
+    return buildEdgeIndex(
+      players,
+      primaryListState.players,
+      comparisonListState.players
+    );
+  }, [edgeActive, players, primaryListState, comparisonListState]);
+
+  const edgeCtx = useMemo(() => {
+    if (!edgeActive || currentPick == null) return null;
+    const next = myUpcoming.length ? myUpcoming[0] : null;
+    const waitPick =
+      next != null && next > currentPick
+        ? next
+        : myUpcoming.length > 1
+        ? myUpcoming[1]
+        : null;
+    const windowEnd =
+      myUpcoming.length > 1
+        ? myUpcoming[1]
+        : myUpcoming.length
+        ? myUpcoming[0]
+        : currentPick + 2 * numTeams;
+    return {
+      currentPick,
+      nextPick: next,
+      waitPick,
+      windowEnd,
+      totalPicks,
+      numTeams,
+      primaryName: sourceLabelFor(edge.primary),
+      comparisonName: sourceLabelFor(edge.comparison),
+    };
+  }, [edgeActive, currentPick, myUpcoming, numTeams, totalPicks, edge.primary, edge.comparison]);
+
+  /* Badge + entry for one player row in the normal rankings views */
+  const edgeRowFor = useCallback(
+    (p) => {
+      if (!edgeIndex || !edgeCtx) return null;
+      const entry = edgeIndex.index.get(p.id);
+      if (!entry) return null;
+      return {
+        entry,
+        indicator: chooseIndicator(entry, {
+          ...edgeCtx,
+          isTarget: targets.includes(p.id),
+        }),
+        availability: availabilityFor(entry, edgeCtx),
+      };
+    },
+    [edgeIndex, edgeCtx, targets]
+  );
+
+  /* Full row set for the Draft Edge tab — recomputes automatically on
+     picks, undo, source changes, imports, or watchlist edits. */
+  const edgeRows = useMemo(() => {
+    if (!edgeActive || !edgeIndex || !edgeCtx) return [];
+    return buildEdgeRows(players, edgeIndex.index, edgeCtx, {
+      draftedIds,
+      targets,
+    });
+  }, [edgeActive, edgeIndex, edgeCtx, players, draftedIds, targets]);
+
+  /* Disabling Draft Edge while its tab is open bounces back to Players */
+  useEffect(() => {
+    if (!edge.enabled && tab === "edge") setTab("players");
+  }, [edge.enabled, tab]);
 
   const isWide = useIsWide();
   const showSplit = isWide && (tab === "players" || tab === "board");
@@ -1312,6 +1529,17 @@ export default function DraftDay() {
             />
           </section>
 
+          <section className="dd-card">
+            <h2 className="dd-card-title">Draft Edge</h2>
+            <DraftEdgeSettings
+              edge={edge}
+              setEdge={setEdge}
+              sourceKeys={edgeSourceKeys}
+              listInfo={edgeListInfo}
+              retryList={retryEdgeList}
+            />
+          </section>
+
           <button className="dd-start" onClick={startDraft}>
             Start draft
           </button>
@@ -1455,7 +1683,14 @@ export default function DraftDay() {
             {filteredPlayers.map((p, idx) => {
               const pickInfo = draftedIds.get(p.id);
               const isSel = selectedId === p.id;
-              const val = !pickInfo ? valueFor(p) : null;
+              /* One primary Draft Edge indicator per row, only at
+                 subtle/detailed level and only when meaningful */
+              const edgeRow =
+                !pickInfo && edge.level !== "off" ? edgeRowFor(p) : null;
+              const edgeBadge = edgeRow ? edgeRow.indicator : null;
+              /* The legacy fell-past-ADP badge yields to the Draft Edge
+                 badge so a row never carries two value indicators */
+              const val = !pickInfo && !edgeBadge ? valueFor(p) : null;
               const injTag = injuryTag(metaFor(p));
               const tier = tierOf.get(p.id);
               const showTierBreak =
@@ -1503,6 +1738,26 @@ export default function DraftDay() {
                             }${pickInfo.keeper ? " · Keeper" : ""}`
                           : ""}
                       </span>
+                      {edge.level === "detailed" && edgeRow && edgeCtx && (
+                        <span className="dd-edge-sub">
+                          {edgeCtx.primaryName}{" "}
+                          {edgeRow.entry.primaryRank != null
+                            ? `#${edgeRow.entry.primaryRank}`
+                            : "—"}
+                          {" · "}
+                          {edgeCtx.comparisonName}{" "}
+                          {edgeRow.entry.comparisonRank != null
+                            ? `#${edgeRow.entry.comparisonRank}`
+                            : "—"}
+                          {edgeRow.entry.gap != null
+                            ? ` · Gap ${formatGap(edgeRow.entry.gap)}`
+                            : ""}
+                          {(() => {
+                            const a = availabilityText(edgeRow.entry, edgeCtx);
+                            return a ? ` · ${a}` : "";
+                          })()}
+                        </span>
+                      )}
                     </span>
                     {injTag && (
                       <span
@@ -1523,6 +1778,15 @@ export default function DraftDay() {
                     {val != null && (
                       <span className="dd-val" title="Fallen past ADP/rank">
                         +{val}
+                      </span>
+                    )}
+                    {edgeBadge && (
+                      <span
+                        className={`dd-edge ${edgeBadge.type}`}
+                        title={`Draft Edge · ${edgeCtx.primaryName} vs ${edgeCtx.comparisonName} — tap the row for details`}
+                      >
+                        {edgeBadge.type === "closing" ? "⏳ " : ""}
+                        {edgeBadge.label}
                       </span>
                     )}
                   </button>
@@ -1546,6 +1810,13 @@ export default function DraftDay() {
                       {byeWarn && (
                         <p className="dd-byewarn">⚠ {byeWarn}</p>
                       )}
+                      {edgeRow &&
+                        edgeCtx &&
+                        edgeRow.entry.gap != null && (
+                          <p className="dd-edgeline">
+                            {edgeExplanation(edgeRow.entry, edgeCtx)}
+                          </p>
+                        )}
                       <button
                         className={`dd-draftbtn ${
                           activeSlotTeam === myIdx ? "mine" : ""
@@ -1673,6 +1944,34 @@ export default function DraftDay() {
             Tap any sticker to fix or remove that pick. Tap an empty slot to
             fill it out of order. 🔒 = keeper. Gold column = you.
           </p>
+        </main>
+      )}
+
+      {/* ---- DRAFT EDGE TAB ---- */}
+      {tab === "edge" && edge.enabled && (
+        <main className="dd-main dd-pad">
+          <DraftEdgeTab
+            rows={edgeRows}
+            primaryOnly={edgeIndex ? edgeIndex.primaryOnly : []}
+            ctx={edgeCtx}
+            active={edgeActive}
+            listInfo={edgeListInfo}
+            retryList={retryEdgeList}
+            view={edgeView}
+            setView={setEdgeView}
+            filters={edgeFilters}
+            setFilters={setEdgeFilters}
+            sort={edgeSort}
+            setSort={setEdgeSort}
+            posView={edgePos}
+            setPosView={setEdgePos}
+            numTeams={numTeams}
+            myUpcoming={myUpcoming}
+            draftDone={draftDone}
+            toggleTarget={toggleTarget}
+            openDetail={setDetailId}
+            sourceCount={edgeSourceKeys.length}
+          />
         </main>
       )}
 
@@ -1821,6 +2120,18 @@ export default function DraftDay() {
             />
           </section>
 
+          <h2 className="dd-section-title">Draft Edge</h2>
+          <section className="dd-card">
+            <DraftEdgeSettings
+              compact
+              edge={edge}
+              setEdge={setEdge}
+              sourceKeys={edgeSourceKeys}
+              listInfo={edgeListInfo}
+              retryList={retryEdgeList}
+            />
+          </section>
+
           <h2 className="dd-section-title">Player data</h2>
           <section className="dd-card">
             <p className="dd-hint" style={{ margin: 0 }}>
@@ -1962,12 +2273,39 @@ export default function DraftDay() {
         (() => {
           const dp = players.find((x) => x.id === detailId);
           if (!dp) return null;
+          const dpEntry =
+            edgeActive && edgeIndex ? edgeIndex.index.get(dp.id) : null;
+          const dpDrafted = draftedIds.get(dp.id);
+          const edgeInfo =
+            dpEntry &&
+            edgeCtx &&
+            (dpEntry.primaryRank != null || dpEntry.comparisonRank != null)
+              ? {
+                  entry: dpEntry,
+                  primaryName: edgeCtx.primaryName,
+                  comparisonName: edgeCtx.comparisonName,
+                  availability: !dpDrafted
+                    ? availabilityFor(dpEntry, edgeCtx)
+                    : null,
+                  availabilityLabel: !dpDrafted
+                    ? availabilityText(dpEntry, edgeCtx)
+                    : null,
+                  rec: !dpDrafted
+                    ? recommendationFor(dpEntry, {
+                        ...edgeCtx,
+                        isTarget: targets.includes(dp.id),
+                      })
+                    : null,
+                  explanation: edgeExplanation(dpEntry, edgeCtx),
+                }
+              : null;
           return (
             <PlayerDetailSheet
               player={dp}
               meta={metaFor(dp)}
               pickInfo={draftedIds.get(dp.id)}
               value={valueFor(dp)}
+              edgeInfo={edgeInfo}
               isTarget={targets.includes(dp.id)}
               toggleTarget={toggleTarget}
               nameFor={nameFor}
@@ -1977,17 +2315,20 @@ export default function DraftDay() {
           );
         })()}
 
-      {/* Bottom navigation — wide screens show Players+Board as one Draft view */}
+      {/* Bottom navigation — wide screens show Players+Board as one Draft
+          view. The Edge tab is hidden while Draft Edge is disabled. */}
       <nav className="dd-nav">
         {(isWide
           ? [
               ["players", "Draft"],
+              ...(edge.enabled ? [["edge", "Edge"]] : []),
               ["roster", "My Team"],
               ["more", "More"],
             ]
           : [
               ["players", "Players"],
               ["board", "Board"],
+              ...(edge.enabled ? [["edge", "Edge"]] : []),
               ["roster", "My Team"],
               ["more", "More"],
             ]
@@ -2139,6 +2480,7 @@ function PlayerDetailSheet({
   meta,
   pickInfo,
   value,
+  edgeInfo,
   isTarget,
   toggleTarget,
   nameFor,
@@ -2248,6 +2590,52 @@ function PlayerDetailSheet({
             </div>
           )}
         </div>
+
+        {edgeInfo && (
+          <div className="dd-detail-edge">
+            <div className="dd-detail-edge-title">Draft Edge</div>
+            <div className="dd-detail-grid">
+              <div className="dd-detail-row">
+                <span>{edgeInfo.primaryName}</span>
+                <b>
+                  {edgeInfo.entry.primaryRank != null
+                    ? `#${edgeInfo.entry.primaryRank}`
+                    : "Not listed"}
+                </b>
+              </div>
+              <div className="dd-detail-row">
+                <span>{edgeInfo.comparisonName}</span>
+                <b>
+                  {edgeInfo.entry.comparisonRank != null
+                    ? `#${edgeInfo.entry.comparisonRank}`
+                    : "Not listed"}
+                </b>
+              </div>
+              <div className="dd-detail-row">
+                <span>Ranking gap</span>
+                <b>{formatGap(edgeInfo.entry.gap)}</b>
+              </div>
+              <div className="dd-detail-row">
+                <span>Availability</span>
+                <b>
+                  {pickInfo ? "Drafted" : edgeInfo.availabilityLabel || "—"}
+                </b>
+              </div>
+              {edgeInfo.rec && (
+                <div className="dd-detail-row" style={{ gridColumn: "1 / -1" }}>
+                  <span>Recommendation</span>
+                  <b>{edgeInfo.rec.label}</b>
+                </div>
+              )}
+            </div>
+            {edgeInfo.explanation && (
+              <p className="dd-hint" style={{ margin: "0 0 4px" }}>
+                {edgeInfo.explanation}
+                {edgeInfo.rec ? ` ${edgeInfo.rec.blurb}` : ""}
+              </p>
+            )}
+          </div>
+        )}
 
         {!meta && (
           <p className="dd-hint" style={{ margin: "0 0 12px" }}>
@@ -2511,6 +2899,638 @@ function ImportPanel({
   );
 }
 
+/* ---------- Draft Edge settings (setup + More tab) ----------
+   Enable/disable, pick the Primary (value) and Comparison (cost)
+   lists, and choose how loud the row indicators are. The two roles
+   can never point at the same list: picking the other role's source
+   swaps them. */
+function DraftEdgeSettings({
+  edge,
+  setEdge,
+  sourceKeys,
+  listInfo,
+  retryList,
+  compact,
+}) {
+  const canCompare = sourceKeys.length >= 2;
+  const setSource = (role, key) =>
+    setEdge((prev) => {
+      const other = role === "primary" ? "comparison" : "primary";
+      if (prev[other] === key)
+        return { ...prev, [role]: key, [other]: prev[role] };
+      return { ...prev, [role]: key };
+    });
+  return (
+    <>
+      <label className="dd-edge-toggle">
+        <input
+          type="checkbox"
+          checked={edge.enabled}
+          onChange={(e) =>
+            setEdge((prev) => ({ ...prev, enabled: e.target.checked }))
+          }
+        />
+        <span className="dd-edge-toggle-text">
+          <b>Draft Edge</b>
+          <small>
+            Compare two ranking lists for value and timing cues while you
+            draft
+          </small>
+        </span>
+      </label>
+      {!edge.enabled && (
+        <p className="dd-hint">
+          Draft Edge is off — comparison badges and the Edge tab are hidden.
+          Your list choices are kept for when you turn it back on.
+        </p>
+      )}
+      {edge.enabled && !canCompare && (
+        <p className="dd-hint" style={{ color: "#EF6461" }}>
+          Draft Edge needs two ranking lists to compare, but only one source
+          is available right now — comparison is disabled.
+        </p>
+      )}
+      {edge.enabled && canCompare && (
+        <>
+          <div className="dd-keeper-selects" style={{ marginTop: 12 }}>
+            <label className="dd-select-wrap">
+              <span>Primary · value</span>
+              <select
+                value={edge.primary || ""}
+                onChange={(e) => setSource("primary", e.target.value)}
+              >
+                {sourceKeys.map((k) => (
+                  <option key={k} value={k}>
+                    {sourceLabelFor(k)}
+                    {k === edge.comparison ? " (swap)" : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="dd-select-wrap">
+              <span>Comparison · cost</span>
+              <select
+                value={edge.comparison || ""}
+                onChange={(e) => setSource("comparison", e.target.value)}
+              >
+                {sourceKeys.map((k) => (
+                  <option key={k} value={k}>
+                    {sourceLabelFor(k)}
+                    {k === edge.primary ? " (swap)" : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <div className="dd-choice-row" style={{ marginTop: 12 }}>
+            {EDGE_LEVELS.map((l) => (
+              <button
+                key={l}
+                className={`dd-chip ${edge.level === l ? "on" : ""}`}
+                onClick={() => setEdge((prev) => ({ ...prev, level: l }))}
+              >
+                {l === "off" ? "Off" : l === "subtle" ? "Subtle" : "Detailed"}
+              </button>
+            ))}
+          </div>
+          {!compact && (
+            <p className="dd-hint">
+              The Primary list estimates player value; the Comparison list
+              estimates what a draft room will pay. Subtle shows one small
+              badge on meaningful players. Detailed adds both ranks and
+              availability under each name. Off keeps the player list clean —
+              the Edge tab stays available.
+            </p>
+          )}
+          {listInfo &&
+            listInfo.map((info) =>
+              info.status === "error" ? (
+                <p
+                  key={info.role}
+                  className="dd-hint"
+                  style={{ color: "#EF6461" }}
+                >
+                  Couldn't load the {info.label} list — the {info.role} side of
+                  the comparison is unavailable until it loads.{" "}
+                  <button
+                    className="dd-linkbtn"
+                    onClick={() => retryList(info.key)}
+                  >
+                    Retry
+                  </button>
+                </p>
+              ) : info.status === "loading" ? (
+                <p key={info.role} className="dd-hint">
+                  Loading the {info.label} list…
+                </p>
+              ) : null
+            )}
+        </>
+      )}
+    </>
+  );
+}
+
+/* ---------- Draft Edge tab ---------- */
+function EdgeItem({ r, ctx, openDetail, toggleTarget }) {
+  const p = r.player;
+  return (
+    <li className="dd-edge-item">
+      <button className="dd-edge-item-main" onClick={() => openDetail(p.id)}>
+        <span
+          className="dd-pos"
+          style={{ background: POS_COLOR[p.pos] || "#666" }}
+        >
+          {p.pos}
+        </span>
+        <span className="dd-nameblock">
+          <span className="dd-pname">{p.name}</span>
+          <span className="dd-pmeta">
+            {p.team || "—"}
+            {p.bye ? ` · Bye ${p.bye}` : ""}
+            {" · "}
+            {ctx.primaryName}{" "}
+            {r.entry.primaryRank != null ? `#${r.entry.primaryRank}` : "—"}
+            {" · "}
+            {ctx.comparisonName}{" "}
+            {r.entry.comparisonRank != null
+              ? `#${r.entry.comparisonRank}`
+              : "—"}
+            {r.entry.gap != null ? ` · ${formatGap(r.entry.gap)}` : ""}
+            {r.entry.adp != null ? ` · ADP ${r.entry.adp}` : ""}
+          </span>
+        </span>
+        {r.rec && (
+          <span className={`dd-edge-rec ${r.availability === "closing" ? "hot" : ""}`}>
+            {r.rec.label}
+          </span>
+        )}
+      </button>
+      <button
+        className={`dd-star ${r.isTarget ? "on" : ""}`}
+        onClick={() => toggleTarget(p.id)}
+        aria-label={
+          r.isTarget ? `Remove ${p.name} from targets` : `Target ${p.name}`
+        }
+      >
+        ★
+      </button>
+    </li>
+  );
+}
+
+function DraftEdgeTab({
+  rows,
+  primaryOnly,
+  ctx,
+  active,
+  listInfo,
+  retryList,
+  view,
+  setView,
+  filters,
+  setFilters,
+  sort,
+  setSort,
+  posView,
+  setPosView,
+  numTeams,
+  myUpcoming,
+  draftDone,
+  toggleTarget,
+  openDetail,
+  sourceCount,
+}) {
+  /* Not usable yet — say exactly why */
+  if (sourceCount < 2) {
+    return (
+      <>
+        <h2 className="dd-section-title">Draft Edge</h2>
+        <p className="dd-hint">
+          Draft Edge compares two ranking lists, but only one ranking source
+          is available right now. Add a second list (for example a custom CSV
+          import) to enable the comparison.
+        </p>
+      </>
+    );
+  }
+  if (!active || !ctx) {
+    const failing = (listInfo || []).filter((i) => i.status === "error");
+    return (
+      <>
+        <h2 className="dd-section-title">Draft Edge</h2>
+        {draftDone ? (
+          <p className="dd-hint">
+            The draft is complete — Draft Edge timing guidance no longer
+            applies.
+          </p>
+        ) : failing.length ? (
+          failing.map((info) => (
+            <p key={info.role} className="dd-hint" style={{ color: "#EF6461" }}>
+              Couldn't load the {info.label} list, so the {info.role} side of
+              the comparison is unavailable.{" "}
+              <button className="dd-linkbtn" onClick={() => retryList(info.key)}>
+                Retry
+              </button>
+            </p>
+          ))
+        ) : (
+          <p className="dd-hint">Loading both ranking lists…</p>
+        )}
+      </>
+    );
+  }
+
+  const t = stageGapThreshold(ctx.currentPick);
+  const band = consensusBand(ctx.currentPick);
+
+  const availRows = rows.filter(
+    (r) =>
+      !r.drafted &&
+      r.entry &&
+      (r.entry.primaryRank != null || r.entry.comparisonRank != null)
+  );
+  const inWin = availRows.filter(
+    (r) => r.cost != null && ctx.windowEnd != null && r.cost <= ctx.windowEnd + t
+  );
+  const bestValues = inWin
+    .filter((r) => r.entry.gap != null && r.entry.gap >= t)
+    .sort((a, b) => b.entry.gap - a.entry.gap)
+    .slice(0, 6);
+  const closing = inWin
+    .filter((r) => r.availability === "closing")
+    .sort((a, b) => (a.cost != null ? a.cost : 9999) - (b.cost != null ? b.cost : 9999))
+    .slice(0, 6);
+  const premiums = inWin
+    .filter((r) => r.entry.gap != null && -r.entry.gap >= t)
+    .sort((a, b) => a.entry.gap - b.entry.gap)
+    .slice(0, 6);
+  const consensus = inWin
+    .filter(
+      (r) =>
+        r.entry.gap != null &&
+        Math.abs(r.entry.gap) <= band &&
+        r.availability !== "closing"
+    )
+    .sort(
+      (a, b) =>
+        (a.entry.primaryRank != null ? a.entry.primaryRank : 9999) -
+        (b.entry.primaryRank != null ? b.entry.primaryRank : 9999)
+    )
+    .slice(0, 6);
+
+  const upcomingLabel = myUpcoming.length
+    ? myUpcoming.map((p) => pickLabel(p, numTeams)).join(" · ")
+    : null;
+
+  const setSortKey = (key) =>
+    setSort((prev) =>
+      prev.key === key
+        ? { key, dir: -prev.dir }
+        : { key, dir: key === "gap" ? -1 : 1 }
+    );
+
+  const sections = [
+    { title: "Best Values", rows: bestValues, hint: `${ctx.primaryName} sees more value than ${ctx.comparisonName}` },
+    { title: "Closing Windows", rows: closing, hint: "May not last until your next pick", hot: true },
+    { title: `${ctx.comparisonName} Premiums`, rows: premiums, hint: `${ctx.comparisonName} takes these players earlier than ${ctx.primaryName} would` },
+    { title: "Consensus Picks", rows: consensus, hint: "Both lists broadly agree" },
+  ];
+
+  const availText = (r) =>
+    r.drafted
+      ? pickLabel(r.drafted.overall, numTeams)
+      : availabilityText(r.entry, ctx) || "—";
+
+  /* ---- full comparison ---- */
+  const filtered = filterEdgeRows(rows, filters, ctx);
+  const sortVal = (r) => {
+    switch (sort.key) {
+      case "name":
+        return r.player.name.toLowerCase();
+      case "pos":
+        return r.player.pos;
+      case "primary":
+        return r.entry && r.entry.primaryRank != null ? r.entry.primaryRank : 9999;
+      case "comparison":
+        return r.entry && r.entry.comparisonRank != null
+          ? r.entry.comparisonRank
+          : 9999;
+      case "gap":
+        return r.entry && r.entry.gap != null ? r.entry.gap : -9999;
+      case "adp":
+        return r.entry && r.entry.adp != null ? r.entry.adp : 9999;
+      default:
+        return 0;
+    }
+  };
+  const sorted = [...filtered].sort((a, b) => {
+    const va = sortVal(a);
+    const vb = sortVal(b);
+    return va < vb ? -sort.dir : va > vb ? sort.dir : 0;
+  });
+  const ROW_CAP = 120;
+  const shown = sorted.slice(0, ROW_CAP);
+
+  const cols = [
+    { key: "name", label: "Player" },
+    { key: "pos", label: "Pos" },
+    { key: "primary", label: ctx.primaryName },
+    { key: "comparison", label: ctx.comparisonName },
+    { key: "gap", label: "Gap" },
+    { key: "adp", label: "ADP" },
+    { key: null, label: "Availability" },
+    { key: null, label: "Call" },
+    { key: null, label: "★" },
+  ];
+
+  /* ---- position comparison ---- */
+  const posRows = availRows
+    .filter((r) => r.player.pos === posView && r.entry.primaryRank != null)
+    .sort((a, b) => a.entry.primaryRank - b.entry.primaryRank)
+    .slice(0, 14);
+
+  const toggleFilter = (patch) => setFilters((prev) => ({ ...prev, ...patch }));
+
+  return (
+    <>
+      <div className="dd-edge-head">
+        <h2 className="dd-section-title" style={{ margin: 0 }}>
+          Draft Edge — {ctx.primaryName} vs {ctx.comparisonName}
+        </h2>
+        <p className="dd-hint" style={{ margin: "4px 0 0" }}>
+          {upcomingLabel
+            ? `Your next picks: ${upcomingLabel}. `
+            : "Your picks are done. "}
+          {ctx.primaryName} estimates value; {ctx.comparisonName} estimates
+          what the room will pay. Availability is an estimate, never a
+          guarantee.
+        </p>
+      </div>
+
+      <div className="dd-chips" style={{ padding: "12px 0 10px" }}>
+        {[
+          ["overview", "Overview"],
+          ["full", "Full Comparison"],
+          ["position", "By Position"],
+        ].map(([key, label]) => (
+          <button
+            key={key}
+            className={`dd-chip ${view === key ? "on" : ""}`}
+            onClick={() => setView(key)}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {view === "overview" && (
+        <>
+          {sections.map((s) => (
+            <div className="dd-edge-section" key={s.title}>
+              <h3 className={s.hot ? "hot" : ""}>{s.title}</h3>
+              {s.rows.length ? (
+                <ul className="dd-edge-list">
+                  {s.rows.map((r) => (
+                    <EdgeItem
+                      key={r.player.id}
+                      r={r}
+                      ctx={ctx}
+                      openDetail={openDetail}
+                      toggleTarget={toggleTarget}
+                    />
+                  ))}
+                </ul>
+              ) : (
+                <p className="dd-hint" style={{ margin: "2px 0 0" }}>
+                  Nothing here for your next two picks right now.
+                </p>
+              )}
+              <p className="dd-edge-sechint">{s.hint}.</p>
+            </div>
+          ))}
+        </>
+      )}
+
+      {view === "full" && (
+        <>
+          <div className="dd-chips" style={{ padding: "0 0 8px" }}>
+            {["ALL", ...POSITIONS].map((p) => (
+              <button
+                key={p}
+                className={`dd-chip ${filters.pos === p ? "on" : ""}`}
+                onClick={() => toggleFilter({ pos: p })}
+              >
+                {p}
+              </button>
+            ))}
+          </div>
+          <div className="dd-chips" style={{ padding: "0 0 8px" }}>
+            <button
+              className={`dd-chip ghost ${filters.availableOnly ? "on-ghost" : ""}`}
+              onClick={() =>
+                toggleFilter({ availableOnly: !filters.availableOnly })
+              }
+            >
+              Available
+            </button>
+            <button
+              className={`dd-chip ghost ${filters.watchOnly ? "on-ghost" : ""}`}
+              onClick={() => toggleFilter({ watchOnly: !filters.watchOnly })}
+            >
+              ★ Watchlist
+            </button>
+            {[
+              ["next", "Next pick"],
+              ["next2", "Next 2 picks"],
+              ["all", "Everyone"],
+            ].map(([key, label]) => (
+              <button
+                key={key}
+                className={`dd-chip ghost ${filters.window === key ? "on-ghost" : ""}`}
+                onClick={() => toggleFilter({ window: key })}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <div className="dd-chips" style={{ padding: "0 0 10px" }}>
+            {[
+              ["ALL", "All"],
+              ["values", "Values"],
+              ["closing", "Closing"],
+              ["premiums", "Premiums"],
+              ["consensus", "Consensus"],
+            ].map(([key, label]) => (
+              <button
+                key={key}
+                className={`dd-chip ghost ${filters.cat === key ? "on-ghost" : ""}`}
+                onClick={() => toggleFilter({ cat: key })}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <div className="dd-board-scroll">
+            <table className="dd-comp">
+              <thead>
+                <tr>
+                  {cols.map((c, i) => (
+                    <th
+                      key={i}
+                      onClick={c.key ? () => setSortKey(c.key) : undefined}
+                      className={c.key ? "sortable" : ""}
+                    >
+                      {c.label}
+                      {c.key === sort.key ? (sort.dir === 1 ? " ↑" : " ↓") : ""}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {shown.map((r) => (
+                  <tr
+                    key={r.player.id}
+                    className={r.drafted ? "drafted" : ""}
+                    onClick={() => openDetail(r.player.id)}
+                  >
+                    <td className="dd-comp-name">
+                      <b>{r.player.name}</b>
+                      <small>
+                        {r.player.team || "—"}
+                        {r.player.bye ? ` · Bye ${r.player.bye}` : ""}
+                      </small>
+                    </td>
+                    <td>
+                      <span
+                        className="dd-pos"
+                        style={{
+                          background: POS_COLOR[r.player.pos] || "#666",
+                        }}
+                      >
+                        {r.player.pos}
+                      </span>
+                    </td>
+                    <td>
+                      {r.entry && r.entry.primaryRank != null
+                        ? r.entry.primaryRank
+                        : "—"}
+                    </td>
+                    <td>
+                      {r.entry && r.entry.comparisonRank != null
+                        ? r.entry.comparisonRank
+                        : "—"}
+                    </td>
+                    <td>{r.entry ? formatGap(r.entry.gap) : "—"}</td>
+                    <td>
+                      {r.entry && r.entry.adp != null ? r.entry.adp : "—"}
+                    </td>
+                    <td>{availText(r)}</td>
+                    <td>{r.drafted ? "Drafted" : r.rec ? r.rec.label : "—"}</td>
+                    <td>
+                      {!r.drafted && (
+                        <button
+                          className={`dd-star inline ${r.isTarget ? "on" : ""}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleTarget(r.player.id);
+                          }}
+                          aria-label={
+                            r.isTarget
+                              ? `Remove ${r.player.name} from targets`
+                              : `Target ${r.player.name}`
+                          }
+                        >
+                          ★
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {sorted.length > ROW_CAP && (
+            <p className="dd-hint">
+              Showing the first {ROW_CAP} of {sorted.length} players — narrow
+              the filters to see the rest.
+            </p>
+          )}
+          {!sorted.length && (
+            <p className="dd-hint">No players match these filters.</p>
+          )}
+          {primaryOnly.length > 0 && (
+            <p className="dd-hint">
+              {primaryOnly.length} {ctx.primaryName} player
+              {primaryOnly.length === 1 ? " isn't" : "s aren't"} in the current
+              list (e.g.{" "}
+              {primaryOnly
+                .slice(0, 3)
+                .map((p) => p.name)
+                .join(", ")}
+              ) — they're shown without comparisons.
+            </p>
+          )}
+        </>
+      )}
+
+      {view === "position" && (
+        <>
+          <div className="dd-chips" style={{ padding: "0 0 10px" }}>
+            {POSITIONS.map((p) => (
+              <button
+                key={p}
+                className={`dd-chip ${posView === p ? "on" : ""}`}
+                style={
+                  posView === p && POS_COLOR[p]
+                    ? {
+                        background: POS_COLOR[p],
+                        borderColor: POS_COLOR[p],
+                        color: "#10141A",
+                      }
+                    : undefined
+                }
+                onClick={() => setPosView(p)}
+              >
+                {p}
+              </button>
+            ))}
+          </div>
+          {posRows.length ? (
+            <ul className="dd-edge-list">
+              {posRows.map((r, i) => {
+                const note =
+                  i < posRows.length - 1
+                    ? positionPairNote(r, posRows[i + 1], ctx)
+                    : null;
+                return (
+                  <React.Fragment key={r.player.id}>
+                    <EdgeItem
+                      r={r}
+                      ctx={ctx}
+                      openDetail={openDetail}
+                      toggleTarget={toggleTarget}
+                    />
+                    {note && <li className="dd-pairnote">{note}</li>}
+                  </React.Fragment>
+                );
+              })}
+            </ul>
+          ) : (
+            <p className="dd-hint">
+              No available {posView}s with a {ctx.primaryName} rank.
+            </p>
+          )}
+          <p className="dd-hint">
+            Available {posView}s in {ctx.primaryName} order. Notes appear when
+            the two lists disagree about who goes first.
+          </p>
+        </>
+      )}
+    </>
+  );
+}
+
 /* ---------- styles ---------- */
 const CSS = `
 :root { color-scheme: dark; }
@@ -2672,6 +3692,54 @@ select.dd-source-quick:disabled { opacity: 0.5; }
 .dd-bye-chip { border: 1px solid var(--line); border-radius: 999px; padding: 6px 12px; font-size: 14px; color: var(--muted); }
 .dd-bye-chip.warn2 { border-color: #6B5A22; color: #F2A44A; }
 .dd-bye-chip.warn3 { border-color: #6B2E2E; color: #EF6461; }
+
+/* ---- Draft Edge ---- */
+/* Row badges: small, muted, text-first (never color alone). Closing is
+   time-sensitive so it gets the only slightly louder treatment. */
+.dd-edge { flex: 0 0 auto; margin-left: 6px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); background: rgba(140,151,164,0.08); font-size: 11px; font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.dd-edge.value { border-color: #3E6A52; color: #7FD3A6; background: rgba(78,196,136,0.08); }
+.dd-edge.premium { border-color: #45608A; color: #8FBDF2; background: rgba(91,168,245,0.08); }
+.dd-edge.closing { border-color: #F2A44A; color: #F2A44A; background: rgba(242,164,74,0.14); font-weight: 800; }
+.dd-edge-sub { font-size: 12px; color: #6E7987; }
+.dd-edgeline { flex-basis: 100%; margin: 0 0 8px; padding: 8px 10px; border-radius: 8px; background: rgba(140,151,164,0.08); border: 1px solid var(--line); color: var(--muted); font-size: 13px; line-height: 1.45; }
+
+/* Settings */
+.dd-edge-toggle { display: flex; align-items: center; gap: 12px; cursor: pointer; }
+.dd-edge-toggle input { width: 22px; height: 22px; accent-color: var(--gold); flex: 0 0 auto; }
+.dd-edge-toggle-text { display: flex; flex-direction: column; gap: 2px; }
+.dd-edge-toggle-text b { font-size: 15px; }
+.dd-edge-toggle-text small { color: var(--muted); font-size: 13px; line-height: 1.35; }
+
+/* Tab */
+.dd-edge-head { margin-top: 6px; }
+.dd-edge-section { margin-bottom: 18px; }
+.dd-edge-section h3 { margin: 0 0 8px; font-size: 12px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); font-weight: 800; }
+.dd-edge-section h3.hot { color: #F2A44A; }
+.dd-edge-sechint { margin: 6px 0 0; color: #6E7987; font-size: 12px; }
+.dd-edge-list { list-style: none; margin: 0; padding: 0; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--panel); }
+.dd-edge-item { position: relative; border-bottom: 1px solid var(--line); }
+.dd-edge-item:last-child { border-bottom: none; }
+.dd-edge-item-main { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 56px; padding: 8px 52px 8px 12px; background: none; border: none; color: var(--text); text-align: left; }
+.dd-edge-rec { flex: 0 0 auto; margin-left: 6px; padding: 3px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); font-size: 11px; font-weight: 800; white-space: nowrap; }
+.dd-edge-rec.hot { border-color: #F2A44A; color: #F2A44A; background: rgba(242,164,74,0.1); }
+.dd-pairnote { padding: 8px 12px; border-bottom: 1px solid var(--line); background: rgba(240,194,75,0.04); color: var(--muted); font-size: 13px; line-height: 1.45; }
+
+/* Full comparison table */
+.dd-comp { border-collapse: collapse; width: 100%; min-width: 680px; font-size: 13px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
+.dd-comp th { text-align: left; padding: 9px 8px; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); border-bottom: 1px solid var(--line); white-space: nowrap; user-select: none; }
+.dd-comp th.sortable { cursor: pointer; }
+.dd-comp td { padding: 8px; border-bottom: 1px solid var(--line); vertical-align: middle; font-variant-numeric: tabular-nums; }
+.dd-comp tr { cursor: pointer; }
+.dd-comp tr.drafted { opacity: 0.45; }
+.dd-comp tr:last-child td { border-bottom: none; }
+.dd-comp-name b { display: block; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 180px; }
+.dd-comp-name small { color: var(--muted); font-size: 12px; }
+.dd-comp .dd-pos { width: 38px; font-size: 11px; display: inline-block; }
+.dd-star.inline { position: static; width: 40px; height: 40px; }
+
+/* Detail sheet section */
+.dd-detail-edge { margin: 0 0 12px; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: rgba(240,194,75,0.04); }
+.dd-detail-edge-title { font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--gold); font-weight: 800; margin-bottom: 10px; }
 
 /* ---- injury badge / player details ---- */
 .dd-inj { flex: 0 0 auto; margin-left: 6px; padding: 2px 7px; border-radius: 999px; border: 1px solid #EF6461; color: #EF6461; background: rgba(239,100,97,0.12); font-size: 11px; font-weight: 800; letter-spacing: 0.04em; }
