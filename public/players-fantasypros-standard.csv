@@ -206,7 +206,7 @@ overall_rank,position,position_rank,name,team,auction_value,bye_week,source_last
 205,QB,27,Jacoby Brissett,ARI,,14,9/10/2026
 206,WR,75,Rashod Bateman,BAL,,13,9/10/2026
 207,K,6,Eddy Pineiro,SF,,8,9/10/2026
-208,RB,64,Kaytron Allen,WAS,,7,9/10/2026
+208,RB,64,Kaytron Allen,FA,,,9/10/2026
 209,TE,25,Oronde Gadsden II,LAC,,7,9/10/2026
 210,RB,65,Isiah Pacheco,DET,,6,9/10/2026
 211,WR,76,Travis Hunter,JAC,,7,9/10/2026
@@ -293,7 +293,7 @@ overall_rank,position,position_rank,name,team,auction_value,bye_week,source_last
 292,DST,19,Indianapolis Colts,IND,,13,9/10/2026
 293,TE,36,Eli Stowers,PHI,,10,9/10/2026
 294,WR,103,Hollywood Brown,PHI,,10,9/10/2026
-295,RB,86,Emari Demercado,DAL,,14,9/10/2026
+295,RB,86,Emari Demercado,FA,,,9/10/2026
 296,RB,87,Devin Singletary,NYG,,8,9/10/2026
 297,QB,35,Shedeur Sanders,CLE,,11,9/10/2026
 298,WR,104,Christian Kirk,SF,,8,9/10/2026
